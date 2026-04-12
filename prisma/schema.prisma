@@ -1,0 +1,48 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model UserInfo {
+  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  name        String
+  username    String    @unique
+  email       String    @unique @db.VarChar(255)
+  password    String
+  phoneNumber String?   @db.VarChar(20)
+  isActive    Boolean   @default(true)
+  roleId      Int?      @db.UnsignedInt
+  role        Roles?    @relation(fields: [roleId], references: [id])
+  createdBy   Int?      @db.UnsignedInt
+  updatedBy   Int?      @db.UnsignedInt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt])
+}
+
+model Roles {
+  id          Int        @id @default(autoincrement()) @db.UnsignedInt
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  createdBy   Int?       @db.UnsignedInt
+  updatedBy   Int?       @db.UnsignedInt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  users       UserInfo[]
+
+  @@index([deletedAt])
+}

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import cookieParser from "cookie-parser";
 
 async function main() {
   const app = await NestFactory.create(AppModule);
@@ -14,7 +15,9 @@ async function main() {
     }),
   );
 
+  app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
+  
   app.listen(PORT, () => console.log(`Server Port: ${PORT}`));
 }
 

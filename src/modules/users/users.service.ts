@@ -2,10 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcrypt';
+import { throwNotFoundException } from '../utils/http-exception.helper';
 
 @Injectable()
 export class UserService {
-  constructor(private prisma: PrismaService) {}
+  
+  constructor(private prisma: PrismaService) { }
 
   // ✅ DRY: reusable select object
   private readonly userSelect = {
@@ -27,8 +30,12 @@ export class UserService {
       select: this.userSelect,
     });
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throwNotFoundException('User not found');
     return user;
+  }
+
+  private async hashPassword(password: string) {
+    return await bcrypt.hash(password, 10);
   }
 
   async findAll() {
@@ -38,6 +45,7 @@ export class UserService {
     });
 
     return {
+      status: true,
       message: 'Users fetched successfully',
       data: users,
     };
@@ -47,6 +55,7 @@ export class UserService {
     const user = await this.findUserOrThrow(id);
 
     return {
+      status: true,
       message: 'User fetched successfully',
       data: user,
     };
@@ -54,8 +63,15 @@ export class UserService {
 
   async create(data: CreateUserDto) {
     try {
+      // await this.prisma.userInfo.create({
+      //   data,
+      // });
+      const hashedPassword = await this.hashPassword(data.password);
       await this.prisma.userInfo.create({
-        data,
+        data: {
+          ...data,
+          password: hashedPassword,
+        },
       });
 
       return {
@@ -63,6 +79,7 @@ export class UserService {
       };
     } catch (error) {
       return {
+        status: false,
         message: 'Failed to create user',
         error: (error as Error).message,
       };
@@ -73,16 +90,22 @@ export class UserService {
     await this.findUserOrThrow(id);
 
     try {
+      if (data.password) {
+        data.password = await this.hashPassword(data.password);
+      }
+
       await this.prisma.userInfo.update({
         where: { id },
         data,
       });
 
       return {
+        status: true,
         message: 'User updated successfully',
       };
     } catch (error) {
       return {
+        status: false,
         message: 'Failed to update user',
         error: (error as Error).message,
       };
@@ -102,10 +125,12 @@ export class UserService {
       });
 
       return {
+        status: true,
         message: 'User deleted successfully',
       };
     } catch (error) {
       return {
+        status: false,
         message: 'Failed to delete user',
         error: (error as Error).message,
       };

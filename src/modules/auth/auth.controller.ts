@@ -19,7 +19,7 @@ export class AuthController {
 
     res.cookie('token', result.access_token, {
       httpOnly: true,
-      secure: false, // true in production (HTTPS)
+      secure: true, // true in production (HTTPS)
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000,
     });

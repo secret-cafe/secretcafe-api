@@ -5,15 +5,7 @@ import { PrismaClient } from 'generated/prisma/client';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
     constructor() {
-        const adapter = new PrismaMariaDb({
-            host: process.env.DATABASE_HOST,
-            user: process.env.DATABASE_USER,
-            password: process.env.DATABASE_PASSWORD,
-            database: process.env.DATABASE_NAME,
-            connectionLimit: 1,
-        });
-
-        super({ adapter });
+        super(); // ✅ no adapter needed
     }
 
     async onModuleInit() {

@@ -23,6 +23,6 @@ export class CreateUserDto {
   @MinLength(10)
   phoneNumber?: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   roleId?: number;
 }

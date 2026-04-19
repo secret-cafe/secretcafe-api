@@ -15,6 +15,9 @@ export class AuthService {
   async validateUser(email: string, password: string) {
     const user = await this.prisma.userInfo.findFirst({
       where: { email, deletedAt: null },
+      include: {
+        role: true, // Include the `role` relation here
+      },
     });
 
     if (!user) throw new throwUnauthorizedException();
@@ -31,6 +34,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
+      role: user.role?.name,
     };
 
     const token = this.jwtService.sign(payload);

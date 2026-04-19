@@ -9,7 +9,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 @Module({
   imports: [
     JwtModule.register({
-      secret: 'SUPER_SECRET_KEY', // use env in production
+      secret: process.env.JWT_SECRET ?? 'SUPER_SECRET_KEY',
       signOptions: { expiresIn: '1d' },
     }),
     PrismaModule

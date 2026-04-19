@@ -13,7 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         super({
             jwtFromRequest: cookieExtractor,
             ignoreExpiration: false,
-            secretOrKey: 'SUPER_SECRET_KEY',
+            secretOrKey: process.env.JWT_SECRET ?? 'SUPER_SECRET_KEY',
         });
     }
 
@@ -21,6 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         return {
             userId: payload.sub,
             email: payload.email,
+            role: payload.role
         };
     }
 }

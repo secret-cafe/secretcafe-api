@@ -8,10 +8,8 @@ export class AuthController {
   constructor(private authService: AuthService) { }
 
   @Post('login')
-  async login(
-    @Body() body: { email: string; password: string },
-    @Res({ passthrough: true }) res: express.Response,
-  ) {
+  async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: express.Response) {
+
     const result = await this.authService.login(
       body.email,
       body.password,
@@ -20,7 +18,7 @@ export class AuthController {
     res.cookie('token', result.access_token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'lax',
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000,
     });
 

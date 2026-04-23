@@ -16,7 +16,7 @@ export class AuthController {
     );
 
     res.cookie('token', result.access_token, {
-      domain: 'pos-system-gamma-wine.vercel.app',
+      domain: 'vercel.app',
       httpOnly: true,
       secure: true,
       sameSite: 'none',

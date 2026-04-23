@@ -16,7 +16,7 @@ export class AuthController {
     );
 
     res.cookie('token', result.access_token, {
-      // domain: '.vercel.app',
+      domain: '.vercel.app',
       httpOnly: true,
       secure: true,
       sameSite: 'none',

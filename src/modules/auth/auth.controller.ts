@@ -2,6 +2,7 @@
 import { Body, Controller, Post, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import express from 'express';
+import { cookieOptions } from '../common/constants/constants';
 
 @Controller('auth')
 export class AuthController {
@@ -15,14 +16,7 @@ export class AuthController {
       body.password,
     );
 
-    res.cookie('token', result.access_token, {
-      domain: 'vercel.app',
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    res.cookie('token', result.access_token, cookieOptions);
 
     return {
       status: true,
@@ -33,7 +27,7 @@ export class AuthController {
 
   @Post('logout')
   logout(@Res({ passthrough: true }) res: express.Response) {
-    res.clearCookie('token');
+    res.clearCookie('token', cookieOptions);
 
     return { 
       status: true, 

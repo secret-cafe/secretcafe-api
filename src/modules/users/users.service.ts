@@ -7,7 +7,7 @@ import { throwNotFoundException } from '../utils/http-exception.helper';
 
 @Injectable()
 export class UserService {
-  
+
   constructor(private prisma: PrismaService) { }
 
   // ✅ DRY: reusable select object
@@ -17,7 +17,14 @@ export class UserService {
     username: true,
     email: true,
     phoneNumber: true,
+    createdAt: true,
     isActive: true,
+    role: {
+      select: {
+        id: true,   // or roleId if that's your schema field
+        name: true,
+      },
+    },
   };
 
   // ✅ DRY: reusable method to find user or throw
@@ -63,9 +70,6 @@ export class UserService {
 
   async create(data: CreateUserDto) {
     try {
-      // await this.prisma.userInfo.create({
-      //   data,
-      // });
       const hashedPassword = await this.hashPassword(data.password);
       await this.prisma.userInfo.create({
         data: {

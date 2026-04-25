@@ -1,11 +1,11 @@
 import { CookieOptions } from 'express';
 
 export enum Role {
-    SUPER_ADMIN = 'super admin',
-    ADMIN = 'admin',
-    CHEF = 'chef',
-    WAITER = 'waiter',
-    CUSTOMER = 'customer',
+    SUPER_ADMIN = 'Super Admin',
+    ADMIN = 'Admin',
+    CHEF = 'Chef',
+    WAITER = 'Waiter',
+    CUSTOMER = 'Customer',
 }
 
 export const cookieOptions: CookieOptions = {

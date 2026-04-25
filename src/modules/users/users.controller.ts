@@ -8,7 +8,7 @@ import { Auth } from '../common/decorators/auth.decorator';
 @Controller('users')
 @Auth(Role.SUPER_ADMIN, Role.ADMIN)
 export class UserController {
-    constructor(private readonly userService: UserService) { }
+    constructor(private readonly userService: UserService) {}
 
     @Post()
     createUser(@Body() createUserDto: CreateUserDto) {

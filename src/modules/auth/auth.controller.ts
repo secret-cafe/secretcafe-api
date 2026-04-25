@@ -21,7 +21,6 @@ export class AuthController {
     return {
       status: true,
       message: 'Login Successful',
-      user: result.user,
     };
   }
 

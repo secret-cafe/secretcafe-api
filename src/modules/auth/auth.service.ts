@@ -16,7 +16,7 @@ export class AuthService {
     const user = await this.prisma.userInfo.findFirst({
       where: { email, deletedAt: null },
       include: {
-        role: true, // Include the `role` relation here
+        role: true,
       },
     });
 

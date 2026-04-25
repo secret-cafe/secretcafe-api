@@ -8,37 +8,100 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
 model UserInfo {
-  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  roleId      Int?        @db.UnsignedInt
   name        String
-  username    String    @unique
-  email       String    @unique @db.VarChar(255)
+  username    String      @unique
+  email       String      @unique @db.VarChar(255)
   password    String
-  phoneNumber String?   @db.VarChar(20)
-  isActive    Boolean   @default(true)
-  roleId      Int?      @db.UnsignedInt
-  createdBy   Int?      @db.UnsignedInt
-  updatedBy   Int?      @db.UnsignedInt
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  phoneNumber String?     @db.VarChar(20)
+  isActive    Boolean     @default(true)
+  createdBy   Int?        @db.UnsignedInt
+  updatedBy   Int?        @db.UnsignedInt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
-  role        Roles?    @relation(fields: [roleId], references: [id])
+  role        Roles?      @relation(fields: [roleId], references: [id])
 
   @@index([deletedAt])
   @@index([roleId], map: "UserInfo_roleId_fkey")
 }
 
 model Roles {
-  id          Int        @id @default(autoincrement()) @db.UnsignedInt
-  name        String     @unique
+  id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  name        String      @unique
   description String?
-  isActive    Boolean    @default(true)
-  createdBy   Int?       @db.UnsignedInt
-  updatedBy   Int?       @db.UnsignedInt
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  isActive    Boolean     @default(true)
+  createdBy   Int?        @db.UnsignedInt
+  updatedBy   Int?        @db.UnsignedInt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
   users       UserInfo[]
 
   @@index([deletedAt])
+}
+
+model Category {
+  id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  name        String      @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean     @default(true)
+  createdBy   Int?        @db.UnsignedInt
+  updatedBy   Int?        @db.UnsignedInt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  menuItems   MenuItem[]
+
+  @@index([deletedAt])
+}
+
+model MenuItem {
+  id          Int          @id @default(autoincrement()) @db.UnsignedInt
+  categoryId  Int          @db.UnsignedInt
+  name        String
+  price       Decimal      @db.Decimal(10, 2)
+  menuType    String
+  available   Boolean      @default(true)
+  imageUrl    String?
+  description String?
+  createdBy   Int?         @db.UnsignedInt
+  updatedBy   Int?         @db.UnsignedInt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  subMenuItems SubMenuItem[]
+
+  @@index([deletedAt])
+  @@index([categoryId])
+}
+
+model SubMenuItem {
+  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  menuId      Int       @db.UnsignedInt
+  name        String    @unique
+  price       Decimal   @db.Decimal(10, 2)
+  available   Boolean   @default(true)
+  imageUrl    String?
+  description String?
+  createdBy   Int?      @db.UnsignedInt
+  updatedBy   Int?      @db.UnsignedInt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  menuItem    MenuItem  @relation(fields: [menuId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([deletedAt])
+  @@index([menuId])
 }

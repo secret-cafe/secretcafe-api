@@ -2,7 +2,7 @@
 import { Body, Controller, Post, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import express from 'express';
-import { cookieOptions } from '../common/constants/constants';
+import { cookieOptions } from 'src/common/constants/constants';
 
 @Controller('auth')
 export class AuthController {

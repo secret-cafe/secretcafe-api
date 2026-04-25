@@ -2,8 +2,8 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGua
 import { UserService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { Role } from '../common/constants/constants';
-import { Auth } from '../common/decorators/auth.decorator';
+import { Role } from 'src/common/constants/constants';
+import { Auth } from 'src/common/decorators/auth.decorator';
 
 @Controller('users')
 @Auth(Role.SUPER_ADMIN, Role.ADMIN)

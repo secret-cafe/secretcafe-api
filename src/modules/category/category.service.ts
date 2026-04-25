@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { throwNotFoundException } from '../utils/http-exception.helper';
+import { throwNotFoundException } from 'src/utils/http-exception.helper';
 
 @Injectable()
 export class CategoryService {
-  
+
   constructor(private prisma: PrismaService) { }
 
   private readonly categorySelect = {
@@ -53,10 +53,13 @@ export class CategoryService {
     };
   }
 
-  async create(data: CreateCategoryDto) {
+  async create(data: CreateCategoryDto, imagePath?: string) {
     try {
       await this.prisma.category.create({
-        data,
+        data: {
+          ...data,
+          imageUrl: imagePath ?? null,
+        },
       });
 
       return {

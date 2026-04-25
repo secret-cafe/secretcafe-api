@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RoleController } from './roles.controller';
 import { RoleService } from './roles.service';
-import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],

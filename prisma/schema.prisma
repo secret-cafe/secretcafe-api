@@ -13,9 +13,9 @@ model UserInfo {
   id          Int         @id @default(autoincrement()) @db.UnsignedInt
   roleId      Int?        @db.UnsignedInt
   name        String
-  username    String      @unique
-  email       String      @unique @db.VarChar(255)
-  password    String
+  username    String      
+  email       String      @db.VarChar(255)
+  password    String      @db.VarChar(255)
   phoneNumber String?     @db.VarChar(20)
   isActive    Boolean     @default(true)
   createdBy   Int?        @db.UnsignedInt
@@ -32,7 +32,7 @@ model UserInfo {
 model Roles {
   id          Int         @id @default(autoincrement()) @db.UnsignedInt
   name        String      @unique
-  description String?
+  description String?     @db.VarChar(255)
   isActive    Boolean     @default(true)
   createdBy   Int?        @db.UnsignedInt
   updatedBy   Int?        @db.UnsignedInt
@@ -46,9 +46,9 @@ model Roles {
 
 model Category {
   id          Int         @id @default(autoincrement()) @db.UnsignedInt
-  name        String      @unique
-  description String?
-  imageUrl    String?
+  name        String      @db.VarChar(255)
+  description String?     @db.VarChar(5000)
+  imageUrl    String?     @db.VarChar(500)
   isActive    Boolean     @default(true)
   createdBy   Int?        @db.UnsignedInt
   updatedBy   Int?        @db.UnsignedInt
@@ -63,23 +63,23 @@ model Category {
 }
 
 model MenuItem {
-  id          Int          @id @default(autoincrement()) @db.UnsignedInt
-  categoryId  Int          @db.UnsignedInt
-  name        String
-  price       Decimal      @db.Decimal(10, 2)
-  menuType    String
-  available   Boolean      @default(true)
-  imageUrl    String?
-  description String?
-  createdBy   Int?         @db.UnsignedInt
-  updatedBy   Int?         @db.UnsignedInt
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  deletedAt   DateTime?
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  categoryId    Int           @db.UnsignedInt
+  name          String        @db.VarChar(255)
+  price         Decimal       @db.Decimal(10, 2)
+  menuType      String        @db.VarChar(255)
+  available     Boolean       @default(true)
+  imageUrl      String?       @db.VarChar(500)
+  description   String?       @db.VarChar(5000)
+  createdBy     Int?          @db.UnsignedInt
+  updatedBy     Int?          @db.UnsignedInt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
 
   // Relations
-  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  subMenuItems SubMenuItem[]
+  category      Category      @relation(fields: [categoryId], references: [id], onUpdate: Cascade)
+  subMenuItems  SubMenuItem[]
 
   @@index([deletedAt])
   @@index([categoryId])
@@ -88,11 +88,11 @@ model MenuItem {
 model SubMenuItem {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
   menuId      Int       @db.UnsignedInt
-  name        String    @unique
+  name        String    @db.VarChar(255)
   price       Decimal   @db.Decimal(10, 2)
   available   Boolean   @default(true)
-  imageUrl    String?
-  description String?
+  imageUrl    String?   @db.VarChar(500)
+  description String?   @db.VarChar(5000)
   createdBy   Int?      @db.UnsignedInt
   updatedBy   Int?      @db.UnsignedInt
   createdAt   DateTime  @default(now())
@@ -100,7 +100,7 @@ model SubMenuItem {
   deletedAt   DateTime?
 
   // Relations
-  menuItem    MenuItem  @relation(fields: [menuId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  menuItem    MenuItem  @relation(fields: [menuId], references: [id], onUpdate: Cascade)
 
   @@index([deletedAt])
   @@index([menuId])

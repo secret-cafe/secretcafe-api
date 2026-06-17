@@ -1,0 +1,38 @@
+// utils/http-exception.helper.ts
+import { UnauthorizedException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+
+export function throwUnauthorizedException(message = 'Invalid credentials') {
+  throw new UnauthorizedException({
+    status: false,
+    message,
+    error: 'Unauthorized',
+    statusCode: 401,
+  });
+}
+
+export function throwNotFoundException(message = 'User not found') {
+  throw new NotFoundException({
+    status: false,
+    message,
+    error: 'Not Found',
+    statusCode: 404,
+  });
+}
+
+export function throwForbiddenException(message = 'Access Denied') {
+  throw new ForbiddenException({
+    status: false,
+    message,
+    error: 'Forbidden',
+    statusCode: 403,
+  });
+}
+
+export function throwBadRequestException(message = 'Access Denied') {
+  throw new BadRequestException({
+    status: false,
+    message,
+    error: 'Bad Request',
+    statusCode: 400,
+  });
+}

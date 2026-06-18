@@ -6,10 +6,35 @@ import { throwBadRequestException, throwForbiddenException } from 'src/common/ut
 import { Prisma } from 'generated/prisma/client';
 import { Role } from 'src/common/constants/constants';
 
+// #region Types
+
+/** Represents the data shape for creating an order sub-menu item within a transaction. */
+type OrderSubMenuItemData = Prisma.OrderSubMenuItemUncheckedCreateWithoutOrderItemInput;
+
+/** Represents the data shape for creating an order item within a transaction, with an optional metadata flag. */
+type ItemsDataWithMeta = Prisma.OrderItemUncheckedCreateWithoutOrderInput & {
+    /** Indicates whether this item was updated (used during order updates). */
+    isUpdated?: boolean;
+};
+
+// #endregion
+
+/**
+ * Service responsible for order lifecycle management.
+ *
+ * Handles order creation, updates, status transitions, role-based permissions,
+ * and retrieval of active/table-wise orders.
+ */
 @Injectable()
 export class OrderService {
     constructor(private prisma: PrismaService) { }
 
+    // #region Role Permissions
+
+    /**
+     * Maps each role to the set of order statuses they are allowed to set.
+     * Used by {@link validateRolePermission} to enforce access control.
+     */
     private readonly rolePermissions: Record<Role, OrderStatus[]> = {
         [Role.SUPER_ADMIN]: [
             OrderStatus.ACCEPTED,
@@ -31,6 +56,14 @@ export class OrderService {
         [Role.CUSTOMER]: [],
     };
 
+    // #endregion
+
+    // #region Query Selectors
+
+    /**
+     * Reusable Prisma select object for fetching orders with their items,
+     * sub-menu items, and related menu item details.
+     */
     private readonly orderSelect = {
         id: true,
         tableId: true,
@@ -84,8 +117,22 @@ export class OrderService {
         },
     };
 
-    public async processOrder(dto: CreateOrderDto) {
+    // #endregion
 
+    // #region Public Methods
+
+    /**
+     * Processes an order — creates a new order or updates an existing one for the given table session.
+     *
+     * Validates the active session, order items, and duplicates before running
+     * a transactional create-or-update flow. On update, existing items and sub-menu items
+     * are diffed against the incoming payload: removed items are soft-cancelled,
+     * existing items are updated in place, and new items are created.
+     *
+     * @param dto - The order creation payload containing table ID, notes, and items.
+     * @returns An object with a success status, message, and the order ID.
+     */
+    public async processOrder(dto: CreateOrderDto) {
         // Check active session
         let isUpdate: boolean = false;
 
@@ -100,15 +147,14 @@ export class OrderService {
             throwBadRequestException('Table active session not found.');
         }
 
-        const sessionId = existingSession?.id ?? 0;
+        const sessionId = existingSession!.id;
 
         // Validate order items
         if (!dto.orderItems || dto.orderItems.length === 0) {
             throwBadRequestException('Order items are required.');
         }
 
-        const orderItems = dto.orderItems;
-        this.validateDuplicateOrderItems(orderItems!);
+        this.validateDuplicateOrderItems(dto.orderItems!);
 
         let orderId: number | null = null;
 
@@ -119,16 +165,15 @@ export class OrderService {
                 },
             });
 
-            isUpdate = checkOrderExists ? true : false;
+            isUpdate = !!checkOrderExists;
             const { subtotal, itemsData } = await this.prepareOrderItems(
                 tx,
-                orderItems!,
+                dto.orderItems!,
                 isUpdate
             );
 
-            //if orders exists update the order
+            // If orders exists update the order
             if (checkOrderExists) {
-
                 orderId = checkOrderExists.id;
 
                 // Existing order items (include their submenu items)
@@ -144,7 +189,7 @@ export class OrderService {
 
                 // Incoming item keys (just menuItemId since submenu is nested)
                 const incomingKeys = new Set(
-                    orderItems?.map(
+                    dto.orderItems!.map(
                         (item) => `${item.menuItemId}`,
                     ),
                 );
@@ -185,7 +230,7 @@ export class OrderService {
                 }
 
                 // Process incoming items: update existing or create new
-                for (const incomingItem of orderItems!) {
+                for (const incomingItem of dto.orderItems!) {
                     const existingItem = existingByMenuId.get(incomingItem.menuItemId);
 
                     if (existingItem) {
@@ -219,7 +264,7 @@ export class OrderService {
                         // Collect all subMenuItemIds needed for this item (both new and existing)
                         const allNeededSubMenuItemIds = (incomingItem.orderSubMenuItems || []).map((s) => s.subMenuItemId);
                         const subMenuItemPrices = new Map<number, any>();
-                        
+
                         if (allNeededSubMenuItemIds.length > 0) {
                             const subMenuItemData = await tx.subMenuItem.findMany({
                                 where: {
@@ -338,7 +383,7 @@ export class OrderService {
                     },
                 });
             }
-            //else create order
+            // Else create order
             else {
                 const createdOrder = await tx.order.create({
                     data: {
@@ -370,8 +415,16 @@ export class OrderService {
         };
     }
 
+    /**
+     * Retrieves active (non-completed, non-cancelled) orders.
+     *
+     * If an `orderId` is provided, fetches only that specific order;
+     * otherwise returns all active orders.
+     *
+     * @param orderId - Optional order ID to filter by.
+     * @returns An object with a success status, message, and the transformed order data.
+     */
     public async getActiveOrders(orderId?: number) {
-
         const orders = await this.prisma.order.findMany({
             where: {
                 id: orderId,
@@ -392,36 +445,20 @@ export class OrderService {
             throwBadRequestException('Order not found.');
         }
 
-        const transformResponse = orders.map(({ id, status, items, ...orders }) => ({
-            orderId: id,
-            orderStatus: status,
-            ...orders,
-            items: items.map(({ id: orderItemId, status: orderItemStatus, menuItem, orderSubMenuItem, ...orderItems }) => ({
-                orderItemId,
-                orderItemStatus,
-                ...orderItems,
-                menuItem: menuItem && {
-                    menuItemId: menuItem.id,
-                    ...menuItem,
-                },
-                orderSubMenuItems: orderSubMenuItem?.map(({ id: orderSubMenuItemId, subMenuItem, ...subRest }) => ({
-                    orderSubMenuItemId,
-                    ...subRest,
-                    subMenuItem: subMenuItem && {
-                        subMenuItemId: subMenuItem.id,
-                        ...subMenuItem,
-                    },
-                })),
-            })),
-        }));
-
         return {
             status: true,
             message: 'Orders fetched successfully',
-            data: transformResponse,
+            data: this.transformOrdersResponse(orders),
         };
     }
 
+    /**
+     * Retrieves active orders grouped by table.
+     *
+     * Each table entry contains its orders with transformed item data.
+     *
+     * @returns An object with a success status, message, and an array of table-wise order groups.
+     */
     public async getTableWiseOrders() {
         const orders = await this.prisma.order.findMany({
             where: {
@@ -462,31 +499,7 @@ export class OrderService {
                     orderId: id,
                     orderStatus: status,
                     ...order,
-                    items: items.map(
-                        ({
-                            id: orderItemId,
-                            status: orderItemStatus,
-                            menuItem,
-                            orderSubMenuItem,
-                            ...rest
-                        }) => ({
-                            orderItemId,
-                            orderItemStatus,
-                            ...rest,
-                            menuItem: menuItem && {
-                                menuItemId: menuItem.id,
-                                ...menuItem,
-                            },
-                            orderSubMenuItems: orderSubMenuItem?.map(({ id: orderSubMenuItemId, subMenuItem, ...subRest }) => ({
-                                orderSubMenuItemId,
-                                ...subRest,
-                                subMenuItem: subMenuItem && {
-                                    subMenuItemId: subMenuItem.id,
-                                    ...subMenuItem,
-                                },
-                            })),
-                        }),
-                    ),
+                    items: this.transformOrderItems(items),
                 });
 
                 return acc;
@@ -500,6 +513,13 @@ export class OrderService {
         };
     }
 
+    /**
+     * Deletes all orders, order items, and sub-menu items from the database.
+     *
+     * **Warning:** This is a destructive operation intended for development/cleanup purposes.
+     *
+     * @returns An object with a success status and message.
+     */
     public async cleanOrders() {
         // Delete all order items and submenuitems first
         await this.prisma.orderSubMenuItem.deleteMany({});
@@ -514,8 +534,17 @@ export class OrderService {
         };
     }
 
+    /**
+     * Updates the status of a single order item.
+     *
+     * Validates that the item exists, is not cancelled, the role has permission,
+     * and the status transition is valid. After updating, syncs the parent order's status.
+     *
+     * @param dto - The payload containing the order item ID and new status.
+     * @param role - The role of the current user performing the update.
+     * @returns An object with a success status and message.
+     */
     public async updateOrderItemStatus(dto: UpdateOrderItemDto, role: Role) {
-
         const orderItemId = dto.orderItemId;
         const status = dto.status;
 
@@ -561,8 +590,18 @@ export class OrderService {
         };
     }
 
+    /**
+     * Updates the status of an entire order and all its non-cancelled items.
+     *
+     * Validates role permissions and status transitions before applying the update.
+     * After updating all items, syncs the order-level status.
+     *
+     * @param orderId - The ID of the order to update.
+     * @param status - The new status to apply.
+     * @param role - The role of the current user performing the update.
+     * @returns An object with a success status and message.
+     */
     public async updateOrderStatus(orderId: number, status: OrderStatus, role: Role) {
-
         const order = await this.prisma.order.findUnique({
             where: { id: orderId },
             select: { id: true, status: true },
@@ -595,6 +634,17 @@ export class OrderService {
         };
     }
 
+    // #endregion
+
+    // #region Validation & Permissions
+
+    /**
+     * Validates that the given role is permitted to set the specified order status.
+     *
+     * @param role - The user's role.
+     * @param status - The target order status.
+     * @throws ForbiddenException if the role lacks permission.
+     */
     private validateRolePermission(role: Role, status: OrderStatus): void {
         const allowedStatuses = this.rolePermissions[role];
 
@@ -605,10 +655,26 @@ export class OrderService {
         }
     }
 
+    /**
+     * Validates that the transition from the current status to the new status is allowed.
+     *
+     * Defines a state machine for order status transitions:
+     * - PENDING    → ACCEPTED, CANCELLED
+     * - ACCEPTED   → PREPARING, CANCELLED
+     * - PREPARING  → READY, CANCELLED
+     * - READY      → SERVED, CANCELLED
+     * - SERVED     → COMPLETED, CANCELLED
+     * - COMPLETED  → (terminal)
+     * - CANCELLED  → (terminal)
+     *
+     * @param currentStatus - The current order status.
+     * @param newStatus - The desired new status.
+     * @throws BadRequestException if the transition is not allowed.
+     */
     private isValidStatusTransition(
         currentStatus: OrderStatus,
         newStatus: OrderStatus,
-    ): boolean {
+    ): void {
         // Define allowed transitions
         const transitions: Record<OrderStatus, OrderStatus[]> = {
             [OrderStatus.PENDING]: [
@@ -641,12 +707,48 @@ export class OrderService {
                 `Cannot transition order status from ${currentStatus} to ${newStatus}.`,
             );
         }
-
-        return true;
     }
 
-    private async syncOrderStatus(orderId: number) {
+    /**
+     * Checks for duplicate menu item IDs in the order items array.
+     *
+     * Each menu item can only appear once per order; duplicates are rejected.
+     *
+     * @param orderItems - The array of order items to validate.
+     * @throws BadRequestException if a duplicate menu item ID is found.
+     */
+    private validateDuplicateOrderItems(orderItems: CreateOrderItemDto[]): void {
+        const itemKeys = new Set<string>();
 
+        for (const item of orderItems) {
+            const key = `${item.menuItemId}`;
+
+            if (itemKeys.has(key)) {
+                throwBadRequestException(
+                    `Duplicate item found. MenuItemId ${item.menuItemId} cannot be added multiple times.`,
+                );
+            }
+
+            itemKeys.add(key);
+        }
+    }
+
+    // #endregion
+
+    // #region Status Synchronization
+
+    /**
+     * Synchronises the order-level status based on the highest-priority status
+     * among its non-cancelled items.
+     *
+     * Priority order (ascending): PENDING → ACCEPTED → PREPARING → READY → SERVED → COMPLETED.
+     * CANCELLED items are excluded from the calculation.
+     *
+     * If the resulting status is COMPLETED, the order's `completedAt` timestamp is also set.
+     *
+     * @param orderId - The ID of the order to synchronise.
+     */
+    private async syncOrderStatus(orderId: number) {
         const orderItems = await this.prisma.orderItem.findMany({
             where: { orderId, isCancelled: false },
             select: { status: true },
@@ -678,7 +780,23 @@ export class OrderService {
         });
     }
 
-    private async prepareOrderItems(tx: Prisma.TransactionClient, items: CreateOrderItemDto[], updateStatus: boolean) {
+    // #endregion
+
+    // #region Order Item Preparation
+
+    /**
+     * Prepares order item data for creation within a transaction.
+     *
+     * Fetches menu items and sub-menu items, validates availability and quantities,
+     * calculates pricing, and returns the computed subtotal along with structured
+     * item data ready for Prisma create operations.
+     *
+     * @param tx - The Prisma transaction client.
+     * @param items - The array of incoming order items.
+     * @param includeUpdatedFlag - Whether to include the `isUpdated` metadata flag on each item.
+     * @returns An object containing the computed `subtotal` and `itemsData` array.
+     */
+    private async prepareOrderItems(tx: Prisma.TransactionClient, items: CreateOrderItemDto[], includeUpdatedFlag: boolean) {
         const menuIds = [...new Set(items.map((i) => i.menuItemId))];
 
         const menuItems = await tx.menuItem.findMany({
@@ -718,14 +836,6 @@ export class OrderService {
 
         let subtotal = new Prisma.Decimal(0);
 
-        type OrderSubMenuItemData =
-            Prisma.OrderSubMenuItemUncheckedCreateWithoutOrderItemInput;
-
-        type ItemsDataWithMeta =
-            Prisma.OrderItemUncheckedCreateWithoutOrderInput & {
-                isUpdated?: boolean;
-            };
-
         const itemsData: ItemsDataWithMeta[] = [];
 
         for (const item of items) {
@@ -737,9 +847,9 @@ export class OrderService {
                 );
             }
 
-            if (!menuItem?.available) {
+            if (!menuItem!.available) {
                 throwBadRequestException(
-                    `Menu item unavailable: ${menuItem?.name}`,
+                    `Menu item unavailable: ${menuItem!.name}`,
                 );
             }
 
@@ -750,7 +860,7 @@ export class OrderService {
             }
 
             // Calculate menu item total
-            const itemTotal = menuItem?.price.mul(item?.quantity ?? 0) ?? 0;
+            const itemTotal = menuItem!.price.mul(item.quantity);
             subtotal = subtotal.add(itemTotal);
 
             // Process orderSubMenuItems
@@ -797,7 +907,7 @@ export class OrderService {
                 unitPrice: menuItem?.price ?? 0,
                 totalPrice: itemTotal,
                 notes: item.notes,
-                ...(updateStatus && { isUpdated: item.isUpdated }),
+                ...(includeUpdatedFlag && { isUpdated: item.isUpdated }),
             };
 
             if (orderSubMenuItemsData.length > 0) {
@@ -815,19 +925,56 @@ export class OrderService {
         };
     }
 
-    private validateDuplicateOrderItems(orderItems: CreateOrderItemDto[]): void {
-        const itemKeys = new Set<string>();
+    // #endregion
 
-        for (const item of orderItems) {
-            const key = `${item.menuItemId}`;
+    // #region Response Transformation
 
-            if (itemKeys.has(key)) {
-                throwBadRequestException(
-                    `Duplicate item found. MenuItemId ${item.menuItemId} cannot be added multiple times.`,
-                );
-            }
-
-            itemKeys.add(key);
-        }
+    /**
+     * Transforms raw order records into a flattened response format.
+     *
+     * Renames `id` → `orderId` and `status` → `orderStatus`, and transforms
+     * nested items via {@link transformOrderItems}.
+     *
+     * @param orders - The raw order records from Prisma.
+     * @returns The transformed order array.
+     */
+    private transformOrdersResponse(orders: any[]): any[] {
+        return orders.map(({ id, status, items, ...order }) => ({
+            orderId: id,
+            orderStatus: status,
+            ...order,
+            items: this.transformOrderItems(items),
+        }));
     }
+
+    /**
+     * Transforms raw order item records into a flattened response format.
+     *
+     * Renames `id` → `orderItemId`, `status` → `orderItemStatus`, flattens
+     * the nested `menuItem` and `orderSubMenuItem` relations.
+     *
+     * @param items - The raw order item records from Prisma.
+     * @returns The transformed order item array.
+     */
+    private transformOrderItems(items: any[]): any[] {
+        return items.map(({ id: orderItemId, status: orderItemStatus, menuItem, orderSubMenuItem, ...rest }) => ({
+            orderItemId,
+            orderItemStatus,
+            ...rest,
+            menuItem: menuItem && {
+                menuItemId: menuItem.id,
+                ...menuItem,
+            },
+            orderSubMenuItems: orderSubMenuItem?.map(({ id: orderSubMenuItemId, subMenuItem, ...subRest }) => ({
+                orderSubMenuItemId,
+                ...subRest,
+                subMenuItem: subMenuItem && {
+                    subMenuItemId: subMenuItem.id,
+                    ...subMenuItem,
+                },
+            })),
+        }));
+    }
+
+    // #endregion
 }

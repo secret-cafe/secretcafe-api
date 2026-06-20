@@ -3,7 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { CreateTableDto, UpdateTableDto } from './dto/table.dto';
 import { TableSessionDto } from './dto/table-session.dto';
-import { Prisma, SessionStatus, TableStatus, TableType } from 'generated/prisma/client';
+import { Prisma, SessionStatus, TableStatus, TableType, OrderStatus } from 'generated/prisma/client';
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
@@ -93,7 +93,7 @@ export class TableService {
       },
       select: this.tableSelect,
       orderBy: {
-        id: 'desc',
+        id: 'asc',
       },
     });
 
@@ -190,6 +190,7 @@ export class TableService {
   }
 
   public async handleTableSession(data: TableSessionDto) {
+
     const tableId = data.tableId;
     const tableStatus = data.status;
     const { status, guestCount, ...tableSessionData } = data;
@@ -220,6 +221,22 @@ export class TableService {
 
     if (existingSession && (tableStatus == "OCCUPIED" || tableStatus == "RESERVED" || sessionStatus == undefined)) {
       throwBadRequestException(`Table is already ${table?.tableStatus}`);
+    }
+
+    //check order exists for CLEANING status
+    if (existingSession && (tableStatus == "CLEANING" || sessionStatus == SessionStatus.CANCELLED)) {
+      const existingOrder = await this.prisma.order.findFirst({
+        where: {
+          tableId: tableId,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+          },
+        },
+      });
+
+      if (existingOrder) {
+        throwBadRequestException(`Cannot set table to ${tableStatus}. Active orders exist.`);
+      }
     }
 
     await this.prisma.restaurantTable.update({

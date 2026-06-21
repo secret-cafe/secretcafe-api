@@ -2,16 +2,12 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { OrderController } from './order.controller';
 import { OrderService } from './order.service';
+import { OrderValidationService } from './order-validation.service';
+import { OrderItemService } from './order-item.service';
 
-/**
- * Module that encapsulates order-related functionality.
- *
- * Registers the {@link OrderController} and {@link OrderService}
- * and imports {@link PrismaModule} for database access.
- */
 @Module({
   imports: [PrismaModule],
   controllers: [OrderController],
-  providers: [OrderService]
+  providers: [OrderService, OrderValidationService, OrderItemService],
 })
 export class OrderModule {}

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { AuthModule } from './modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/users/users.module';
 import { RoleModule } from './modules/roles/roles.module';
 import { CategoryModule } from './modules/category/category.module';
@@ -9,13 +9,11 @@ import { CustomerModule } from './modules/customer/customer.module';
 import { CloudinaryModule } from './common/upload/cloudinary/cloudinary.module';
 import { TableModule } from './modules/table/table.module';
 import { OrderModule } from './modules/order/order.module';
-import { OrderController } from './modules/order/order.controller';
-import { OrderService } from './modules/order/order.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // so you can use it anywhere
+      isGlobal: true,
     }),
     CloudinaryModule,
     AuthModule,
@@ -25,9 +23,8 @@ import { OrderService } from './modules/order/order.service';
     MenuModule,
     CustomerModule,
     TableModule,
-    OrderModule],
-  controllers: [OrderController],
-  providers: [OrderService],
+    OrderModule,
+  ],
 })
 
 export class AppModule { }

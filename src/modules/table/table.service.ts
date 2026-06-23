@@ -3,7 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { CreateTableDto, UpdateTableDto } from './dto/table.dto';
 import { TableSessionDto } from './dto/table-session.dto';
-import { Prisma, SessionStatus, TableStatus, TableType } from 'generated/prisma/client';
+import { Prisma, SessionStatus, TableStatus, TableType, PaymentStatus, OrderStatus } from 'generated/prisma/client';
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
@@ -222,22 +222,124 @@ export class TableService {
       throwBadRequestException(`Table is already ${table?.tableStatus}`);
     }
 
-    await this.prisma.restaurantTable.update({
-      where: { id: tableId },
-      data: {
-        tableStatus: tableStatus
-      }
-    });
+    // For CLEANING status: validate no active orders AND no unpaid bills,
+    // then perform all updates atomically within a transaction.
+    if (existingSession && tableStatus == "CLEANING") {
+      // Validate no active orders exist on this table
+      const existingOrder = await this.prisma.order.findFirst({
+        where: {
+          tableId: tableId,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+          },
+        },
+      });
 
-    if (sessionStatus) {
+      if (existingOrder) {
+        throwBadRequestException(`Cannot set table to ${tableStatus}. Active orders exist.`);
+      }
+
+      // Validate no unpaid bills exist for this session
+      const unpaidBill = await this.prisma.billing.findFirst({
+        where: {
+          sessionId: existingSession.id,
+          paymentStatus: {
+            notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED],
+          },
+        },
+      });
+
+      if (unpaidBill) {
+        throwBadRequestException(
+          `Cannot close table. Unpaid bill (${unpaidBill.billNumber}) exists. Please complete payment first.`
+        );
+      }
+
+      // Perform all updates atomically
+      const enableTimeRate = table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
+      const billing = this.calculateTimeCharge(existingSession);
+
+      await this.prisma.$transaction(async (tx) => {
+        // Update session to CLOSED with time charge calculation
+        await tx.tableSession.update({
+          where: { id: existingSession.id },
+          data: {
+            ...tableSessionData,
+            status: SessionStatus.CLOSED,
+            endedAt: new Date(),
+            timerEndedAt: enableTimeRate ? new Date() : null,
+            totalMinutes: (enableTimeRate && billing?.totalMinutes !== 0) ? billing?.totalMinutes : null,
+            timeChargeAmount: (enableTimeRate && billing?.amount !== 0) ? billing?.amount : null,
+          },
+        });
+
+        // Update table to CLEANING and reset guest count
+        await tx.restaurantTable.update({
+          where: { id: tableId },
+          data: {
+            tableStatus: TableStatus.CLEANING,
+            guestCount: 0,
+          },
+        });
+      });
+
+      return this.response(
+        `Table cleaning successfully`,
+        { status: tableStatus }
+      );
+    }
+
+    // For CANCELLED status: validate and update atomically
+    if (existingSession && sessionStatus == SessionStatus.CANCELLED) {
+      const existingOrder = await this.prisma.order.findFirst({
+        where: {
+          tableId: tableId,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+          },
+        },
+      });
+
+      if (existingOrder) {
+        throwBadRequestException(`Cannot cancel session. Active orders exist.`);
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.tableSession.update({
+          where: { id: existingSession.id },
+          data: { status: SessionStatus.CANCELLED },
+        });
+
+        await tx.restaurantTable.update({
+          where: { id: tableId },
+          data: { tableStatus: TableStatus.AVAILABLE },
+        });
+      });
+
+      return this.response(
+        `Session cancelled successfully`,
+        { status: "AVAILABLE" }
+      );
+    }
+
+    // For new session creation (OCCUPIED/RESERVED): perform atomically
+    if (tableStatus == "OCCUPIED" || tableStatus == "RESERVED") {
       const enableTimeRate = table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
 
-      if (!existingSession) {
-        await this.prisma.tableSession.create({
+      await this.prisma.$transaction(async (tx) => {
+        await tx.restaurantTable.update({
+          where: { id: tableId },
+          data: {
+            tableStatus: tableStatus as TableStatus,
+            guestCount: guestCount,
+          },
+        });
+
+        await tx.tableSession.create({
           data: {
             ...tableSessionData,
             guestCount: guestCount,
-            status: sessionStatus,
+            status: SessionStatus.ACTIVE,
             startedAt: new Date(),
             timerStartedAt: enableTimeRate ? new Date() : null,
             enableTimeRate: enableTimeRate,
@@ -245,45 +347,17 @@ export class TableService {
             chargePerPerson: table?.chargePerPerson,
           },
         });
+      });
 
-        await this.prisma.restaurantTable.update({
-          where: { id: tableId },
-          data: {
-            guestCount: guestCount
-          }
-        });
-      }
-      else {
-        const billing = this.calculateTimeCharge(existingSession);
-
-        await this.prisma.tableSession.update({
-          where: { id: existingSession.id },
-          data: {
-            ...tableSessionData,
-            status: sessionStatus,
-            endedAt: sessionStatus === 'CLOSED' ? new Date() : null,
-            timerEndedAt: (sessionStatus === 'CLOSED' && enableTimeRate) ? new Date() : null,
-            totalMinutes: (sessionStatus === 'CLOSED' && billing?.totalMinutes !== 0) ? billing?.totalMinutes : null,
-            timeChargeAmount: (sessionStatus === 'CLOSED' && billing?.amount !== 0) ? billing?.amount : null,
-          },
-        });
-
-        if (tableStatus == "CLEANING") {
-          await this.prisma.restaurantTable.update({
-            where: { id: tableId },
-            data: {
-              guestCount: 0
-            }
-          });
-        }
-      }
+      return this.response(
+        `Table ${tableStatus} successfully`,
+        { status: tableStatus }
+      );
     }
 
     return this.response(
-      `Table ${tableStatus} successfull`,
-      {
-        status: tableStatus
-      }
+      `Table status updated to ${tableStatus}`,
+      { status: tableStatus }
     );
   }
 

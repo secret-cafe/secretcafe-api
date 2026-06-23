@@ -9,6 +9,7 @@ import { CustomerModule } from './modules/customer/customer.module';
 import { CloudinaryModule } from './common/upload/cloudinary/cloudinary.module';
 import { TableModule } from './modules/table/table.module';
 import { OrderModule } from './modules/order/order.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { OrderModule } from './modules/order/order.module';
     CustomerModule,
     TableModule,
     OrderModule,
+    BillingModule,
   ],
 })
 

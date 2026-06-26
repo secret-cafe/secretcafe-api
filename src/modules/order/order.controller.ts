@@ -71,7 +71,7 @@ export class OrderController {
      * @returns The result from the order service.
      */
     @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
-    @Patch('order-item')
+    @Patch('order-item-status')
     public update(@Body() dto: UpdateOrderItemDto, @CurrentUser('role') role: Role) {
         return this.orderService.updateOrderItemStatus(dto, role);
     }

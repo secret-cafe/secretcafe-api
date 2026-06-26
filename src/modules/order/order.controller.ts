@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch, Post, Req, Res } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { ProcessOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { ProcessOrderDto, UpdateOrderItemDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { Role, cookieOptions } from 'src/common/constants/constants';
 import { Auth } from 'src/common/decorators/auth.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -59,6 +59,21 @@ export class OrderController {
         @CurrentUser('role') role: Role,
     ) {
         return this.orderService.updateOrderStatus(dto, role);
+    }
+
+    /**
+     * Updates the status of a single order item.
+     *
+     * Requires authentication with at least WAITER role.
+     *
+     * @param dto - The payload containing the order item ID and new status.
+     * @param role - The role of the authenticated user.
+     * @returns The result from the order service.
+     */
+    @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
+    @Patch('order-item')
+    public update(@Body() dto: UpdateOrderItemDto, @CurrentUser('role') role: Role) {
+        return this.orderService.updateOrderItemStatus(dto, role);
     }
 
     /**

@@ -89,3 +89,16 @@ export class UpdateOrderStatusDto {
     @IsString()
     notes?: string;
 }
+
+/** DTO for updating the status of a specific order item. */
+export class UpdateOrderItemDto {
+    /** The ID of the order item to update. */
+    @IsNotEmpty()
+    @IsInt()
+    orderItemId!: number;
+
+    /** The new status to assign to the order item. */
+    @IsNotEmpty()
+    @IsEnum(OrderStatus)
+    status!: OrderStatus;
+}

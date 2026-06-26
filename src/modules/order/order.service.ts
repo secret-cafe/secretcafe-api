@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { OrderValidationService } from './order-validation.service';
 import { OrderItemService } from './order-item.service';
-import { ProcessOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { ProcessOrderDto, UpdateOrderItemDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { OrderStatus, SessionStatus } from 'generated/prisma/enums';
 import { throwBadRequestException } from 'src/common/utils/http-exception.helper';
 import { Role } from 'src/common/constants/constants';
@@ -203,6 +203,62 @@ export class OrderService {
         return {
             status: true,
             message: 'Order status updated successfully.',
+        };
+    }
+
+    /**
+     * Updates the status of a single order item.
+     *
+     * Validates that the item exists, is not cancelled, the role has permission,
+     * and the status transition is valid. After updating, syncs the parent order's status.
+     *
+     * @param dto - The payload containing the order item ID and new status.
+     * @param role - The role of the current user performing the update.
+     * @returns An object with a success status and message.
+     */
+    public async updateOrderItemStatus(dto: UpdateOrderItemDto, role: Role) {
+        const orderItemId = dto.orderItemId;
+        const status = dto.status;
+
+        const orderItem = await this.prisma.orderItem.findUnique({
+            where: {
+                id: orderItemId,
+            },
+            select: {
+                id: true,
+                orderId: true,
+                isCancelled: true,
+                status: true,
+            },
+        });
+
+        if (!orderItem) {
+            throwBadRequestException('Order item not found.');
+        }
+
+        if (orderItem?.isCancelled) {
+            throwBadRequestException(
+                'Cannot update status of a cancelled order item.',
+            );
+        }
+
+        this.validation.validateRolePermission(role, status);
+        this.validation.isValidStatusTransition(orderItem!.status, status);
+
+        await this.prisma.orderItem.update({
+            where: {
+                id: orderItemId,
+            },
+            data: {
+                status,
+            },
+        });
+
+        await this.syncOrderStatus(orderItem!.orderId);
+
+        return {
+            status: true,
+            message: 'Order item status updated successfully.',
         };
     }
 

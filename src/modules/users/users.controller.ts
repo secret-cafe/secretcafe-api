@@ -8,21 +8,22 @@ import { Auth } from 'src/common/decorators/auth.decorator';
 @Controller('users')
 @Auth(Role.SUPER_ADMIN, Role.ADMIN)
 export class UserController {
-    constructor(private readonly userService: UserService) {}
+    constructor(private readonly userService: UserService) { }
 
     @Post()
     createUser(@Body() createUserDto: CreateUserDto) {
         return this.userService.create(createUserDto);
     }
 
-    @Get('profile')
-    getProfile(@Req() req: any) {
-        return this.userService.findOne(req.user.userId);
-    }
-
     @Get()
     getAllUsers() {
         return this.userService.findAll();
+    }
+
+    @Get('profile')
+    @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
+    getProfile(@Req() req: any) {
+        return this.userService.findOne(req.user.userId);
     }
 
     @Get(':id')

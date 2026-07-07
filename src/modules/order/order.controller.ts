@@ -79,7 +79,7 @@ export class OrderController {
     /**
      * Retrieves active orders grouped by table.
      */
-    @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF)
+    @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
     @Get('table-orders')
     public getTableWiseOrders() {
         return this.orderService.getTableWiseOrders();

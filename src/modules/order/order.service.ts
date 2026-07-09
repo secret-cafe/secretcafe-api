@@ -177,7 +177,12 @@ export class OrderService {
     // #region Status Updates
 
     /**
-     * Updates the status of an entire order and all its non-cancelled items.
+     * Updates the status of an entire order.
+     *
+     * When `dto.isItemsUpdate` is `true`, also updates all non-cancelled
+     * order items to the same status and syncs the order-level status
+     * from the items. When `false` (default), only the order-level status
+     * is updated directly.
      */
     public async updateOrderStatus(dto: UpdateOrderStatusDto, role: Role) {
         const order = await this.prisma.order.findUnique({
@@ -193,12 +198,24 @@ export class OrderService {
         this.validation.validateRolePermission(role, dto.status);
         this.validation.isValidStatusTransition(order.status, dto.status);
 
-        await this.prisma.orderItem.updateMany({
-            where: { orderId: dto.orderId, isCancelled: false },
-            data: { status: dto.status },
-        });
+        if (dto.isItemsUpdate) {
+            // Update all non-cancelled items and sync order status from them
+            await this.prisma.orderItem.updateMany({
+                where: { orderId: dto.orderId, isCancelled: false },
+                data: { status: dto.status },
+            });
 
-        await this.syncOrderStatus(dto.orderId);
+            await this.syncOrderStatus(dto.orderId);
+        } else {
+            // Only update the order-level status directly
+            await this.prisma.order.update({
+                where: { id: dto.orderId },
+                data: {
+                    status: dto.status,
+                    ...(dto.status === OrderStatus.COMPLETED && { completedAt: new Date() }),
+                },
+            });
+        }
 
         return {
             status: true,

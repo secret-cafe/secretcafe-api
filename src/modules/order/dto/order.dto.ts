@@ -85,6 +85,11 @@ export class UpdateOrderStatusDto {
     @IsEnum(OrderStatus)
     status!: OrderStatus;
 
+    /** When true, also updates all non-cancelled order items to the same status. Defaults to false. */
+    @IsOptional()
+    @IsBoolean()
+    isItemsUpdate?: boolean;
+
     @IsOptional()
     @IsString()
     notes?: string;

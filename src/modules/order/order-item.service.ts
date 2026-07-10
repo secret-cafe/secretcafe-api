@@ -94,6 +94,9 @@ export class OrderItemService {
     ): Promise<Prisma.Decimal> {
         this.validation.validateNoDuplicates(items);
 
+        // Validate against existing non-cancelled items in the DB
+        await this.validation.validateNoDuplicatesWithExisting(tx, orderId, items);
+
         // Fetch existing non-cancelled items
         const existingItems = await tx.orderItem.findMany({
             where: { orderId, isCancelled: false },

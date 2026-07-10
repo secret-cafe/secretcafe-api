@@ -4,6 +4,7 @@ import { throwBadRequestException, throwForbiddenException } from 'src/common/ut
 import { OrderStatus } from 'generated/prisma/enums';
 import { Prisma } from 'generated/prisma/client';
 import { Role } from 'src/common/constants/constants';
+import { ProcessOrderItemDto } from './dto/order.dto';
 
 export interface MenuItemInfo {
     id: number;
@@ -93,6 +94,59 @@ export class OrderValidationService {
                 );
             }
             seen.add(item.menuItemId);
+        }
+    }
+
+    /**
+     * Validates that incoming items don't conflict with existing non-cancelled items
+     * in the order by `menuItemId`.
+     *
+     * **Rules:**
+     * - Incoming item with `orderItemId` = updating an existing row — allowed IF the
+     *   `menuItemId` matches the same row (no other non-cancelled item owns it).
+     * - Incoming item without `orderItemId` = new item — rejected if `menuItemId`
+     *   already exists as a non-cancelled item.
+     * - Cancelled items in the DB are ignored (they can be re-added).
+     */
+    async validateNoDuplicatesWithExisting(
+        tx: Prisma.TransactionClient,
+        orderId: number,
+        items: ProcessOrderItemDto[],
+    ): Promise<void> {
+        // Fetch all non-cancelled items currently in the order
+        const existingItems = await tx.orderItem.findMany({
+            where: { orderId, isCancelled: false },
+            select: { id: true, menuItemId: true },
+        });
+
+        // Map menuItemId → orderItemId for existing non-cancelled items
+        const existingMenuMap = new Map(
+            existingItems.map((e) => [e.menuItemId, e.id]),
+        );
+
+        for (const incoming of items) {
+            const existingItemId = existingMenuMap.get(incoming.menuItemId);
+
+            if (existingItemId === undefined) {
+                // menuItemId is not in the order yet — always allowed
+                continue;
+            }
+
+            if (incoming.orderItemId !== undefined) {
+                // This is an update/cancel of an existing item
+                // Allowed only if the existingItemId matches the incoming one
+                if (incoming.orderItemId !== existingItemId) {
+                    throwBadRequestException(
+                        `MenuItemId ${incoming.menuItemId} is already assigned to order item #${existingItemId}. ` +
+                        `Cannot add it as a separate item.`,
+                    );
+                }
+            } else {
+                // This is a new item — but menuItemId already exists in the order
+                throwBadRequestException(
+                    `MenuItemId ${incoming.menuItemId} is already part of this order (item #${existingItemId}).`,
+                );
+            }
         }
     }
 

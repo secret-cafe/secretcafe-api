@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Req, Res } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { ProcessOrderDto, UpdateOrderItemDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { Role, cookieOptions } from 'src/common/constants/constants';
@@ -83,6 +83,17 @@ export class OrderController {
     @Get('table-orders')
     public getTableWiseOrders() {
         return this.orderService.getTableWiseOrders();
+    }
+
+    /**
+     * Retrieves the full status history timeline for an order.
+     */
+    @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
+    @Get('history/:orderId')
+    public getOrderStatusHistory(
+        @Param('orderId', ParseIntPipe) orderId: number,
+    ) {
+        return this.orderService.getOrderStatusHistory(orderId);
     }
 
     // #endregion

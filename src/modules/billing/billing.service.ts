@@ -3,10 +3,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
 import { Prisma, SessionStatus, PaymentStatus, OrderStatus } from 'generated/prisma/client';
+import { OrderStatusHistoryService } from '../order/order-status-history.service';
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly history: OrderStatusHistoryService,
+  ) { }
 
   /**
    * Generates a bill for an order.
@@ -199,8 +203,11 @@ export class BillingService {
 
     const billing = await this.prisma.billing.findUnique({
       where: { id: billingId },
-      include: {
-        order: { select: { id: true } },
+      select: {
+        id: true,
+        orderId: true,
+        billNumber: true,
+        paymentStatus: true,
       },
     });
 
@@ -273,6 +280,17 @@ export class BillingService {
 
       return paid;
     });
+
+    // Log the order-level COMPLETED transition triggered by payment
+    if (billing.orderId) {
+      await this.history.log({
+        orderId: billing.orderId,
+        fromStatus: OrderStatus.SERVED,
+        toStatus: OrderStatus.COMPLETED,
+        reason: `Payment completed (${paymentMethod})`,
+        metadata: { billingId, billNumber: billing.billNumber },
+      });
+    }
 
     return {
       status: true,

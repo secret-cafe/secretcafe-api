@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { OrderValidationService } from './order-validation.service';
 import { OrderItemService } from './order-item.service';
+import { OrderStatusHistoryService } from './order-status-history.service';
 import { ProcessOrderDto, UpdateOrderItemDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { OrderStatus, SessionStatus } from 'generated/prisma/enums';
-import { throwBadRequestException } from 'src/common/utils/http-exception.helper';
+import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { Role } from 'src/common/constants/constants';
 
 /**
@@ -24,6 +25,7 @@ export class OrderService {
         private readonly prisma: PrismaService,
         private readonly validation: OrderValidationService,
         private readonly itemService: OrderItemService,
+        private readonly history: OrderStatusHistoryService,
     ) { }
 
     // #region Query Selectors (Single Source of Truth)
@@ -199,12 +201,31 @@ export class OrderService {
         this.validation.isValidStatusTransition(order.status, dto.status);
 
         if (dto.isItemsUpdate) {
-            // Update all non-cancelled items and sync order status from them
+            // 1. Fetch current item statuses BEFORE updating
+            const currentItems = await this.prisma.orderItem.findMany({
+                where: { orderId: dto.orderId, isCancelled: false },
+                select: { id: true, status: true },
+            });
+
+            // 2. Update all items to the new status
             await this.prisma.orderItem.updateMany({
                 where: { orderId: dto.orderId, isCancelled: false },
                 data: { status: dto.status },
             });
 
+            // 3. Log each item's transition (skip items already at target status)
+            for (const item of currentItems) {
+                if (item.status !== dto.status) {
+                    await this.history.log({
+                        orderId: dto.orderId,
+                        itemId: item.id,
+                        fromStatus: item.status,
+                        toStatus: dto.status,
+                    });
+                }
+            }
+
+            // 4. Sync order-level status from items
             await this.syncOrderStatus(dto.orderId);
         } else {
             // Only update the order-level status directly
@@ -216,6 +237,14 @@ export class OrderService {
                 },
             });
         }
+
+        // Log the order-level status transition
+        await this.history.log({
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: dto.status,
+            reason: dto.notes,
+        });
 
         return {
             status: true,
@@ -272,6 +301,14 @@ export class OrderService {
         });
 
         await this.syncOrderStatus(orderItem!.orderId);
+
+        // Log the item-level status transition
+        await this.history.log({
+            orderId: orderItem!.orderId,
+            itemId: orderItem!.id,
+            fromStatus: orderItem!.status,
+            toStatus: status,
+        });
 
         return {
             status: true,
@@ -340,6 +377,7 @@ export class OrderService {
     }
 
     public async cleanOrders() {
+        await this.prisma.orderStatusHistory.deleteMany({});
         await this.prisma.orderSubMenuItem.deleteMany({});
         await this.prisma.orderItem.deleteMany({});
         await this.prisma.order.deleteMany({});
@@ -347,6 +385,33 @@ export class OrderService {
         return {
             status: true,
             message: 'Orders cleaned successfully.',
+        };
+    }
+
+    // #region Status History
+
+    /**
+     * Retrieves the full status timeline for an order.
+     * Ordered oldest-first for a chronological view.
+     */
+    public async getOrderStatusHistory(orderId: number) {
+        // Verify order exists
+        const order = await this.prisma.order.findUnique({
+            where: { id: orderId },
+            select: { id: true },
+        });
+
+        if (!order) {
+            throwNotFoundException(`Order with ID ${orderId} not found.`);
+            return;
+        }
+
+        const history = await this.history.getHistoryForOrder(orderId);
+
+        return {
+            status: true,
+            message: 'Order status history fetched successfully.',
+            data: history,
         };
     }
 

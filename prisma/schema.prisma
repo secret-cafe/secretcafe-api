@@ -250,7 +250,8 @@ model Order {
   table    RestaurantTable @relation(fields: [tableId], references: [id])
   billings Billing[]
 
-  items OrderItem[]
+  items    OrderItem[]
+  statusHistory OrderStatusHistory[]
 
   @@index([sessionId])
   @@index([tableId])
@@ -275,6 +276,7 @@ model OrderItem {
   order             Order        @relation(fields: [orderId], references: [id])
   menuItem          MenuItem?    @relation(fields: [menuItemId], references: [id])
   orderSubMenuItem  OrderSubMenuItem[]
+  statusHistory     OrderStatusHistory[]
 
   @@index([orderId])
 }
@@ -297,6 +299,25 @@ model OrderSubMenuItem {
   subMenuItem SubMenuItem? @relation(fields: [subMenuItemId], references: [id])
 
   @@index([orderItemId])
+}
+
+model OrderStatusHistory {
+  id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  orderId     Int         @db.UnsignedInt
+  itemId      Int?        @db.UnsignedInt
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  changedBy   Int?        @db.UnsignedInt
+  reason      String?     @db.VarChar(500)
+  metadata    Json?       @db.Json
+  createdAt   DateTime    @default(now())
+
+  order   Order      @relation(fields: [orderId], references: [id])
+  item    OrderItem? @relation(fields: [itemId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@index([itemId])
+  @@index([toStatus])
 }
 
 model Billing {

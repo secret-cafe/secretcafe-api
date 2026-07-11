@@ -83,18 +83,11 @@ export class SeedService {
 
                 if (!role) continue;
 
-                await this.prisma.userInfo.upsert({
-                    where: {
-                        id: 1,
-                    },
-                    update: {
+                await this.prisma.userInfo.create({
+                    data: {
                         ...userData,
                         roleId: role.id,
                     },
-                    create: {
-                        ...userData,
-                        roleId: role.id,
-                    }
                 });
             }
 

@@ -4,7 +4,7 @@ import { Auth } from 'src/common/decorators/auth.decorator';
 import { Role } from 'src/common/constants/constants';
 
 @Controller('seed')
-@Auth(Role.SUPER_ADMIN)
+// @Auth(Role.SUPER_ADMIN)
 export class SeedController {
   constructor(private readonly seedService: SeedService) {}
 

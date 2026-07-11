@@ -197,6 +197,7 @@ export class OrderService {
             return;
         }
 
+        this.validation.validateNotDirectlyCompleted(dto.status);
         this.validation.validateRolePermission(role, dto.status);
         this.validation.isValidStatusTransition(order.status, dto.status);
 
@@ -232,8 +233,7 @@ export class OrderService {
             await this.prisma.order.update({
                 where: { id: dto.orderId },
                 data: {
-                    status: dto.status,
-                    ...(dto.status === OrderStatus.COMPLETED && { completedAt: new Date() }),
+                    status: dto.status
                 },
             });
         }
@@ -288,6 +288,7 @@ export class OrderService {
             );
         }
 
+        this.validation.validateNotDirectlyCompleted(status);
         this.validation.validateRolePermission(role, status);
         this.validation.isValidStatusTransition(orderItem!.status, status);
 
@@ -376,6 +377,9 @@ export class OrderService {
         };
     }
 
+    // #endregion
+
+    // #region Remove All Orders
     public async cleanOrders() {
         await this.prisma.orderStatusHistory.deleteMany({});
         await this.prisma.orderSubMenuItem.deleteMany({});
@@ -387,6 +391,7 @@ export class OrderService {
             message: 'Orders cleaned successfully.',
         };
     }
+    // #endregion
 
     // #region Status History
 
@@ -437,8 +442,7 @@ export class OrderService {
         await this.prisma.order.update({
             where: { id: orderId },
             data: {
-                status: maxStatus,
-                ...(maxStatus === OrderStatus.COMPLETED && { completedAt: new Date() }),
+                status: maxStatus
             },
         });
     }

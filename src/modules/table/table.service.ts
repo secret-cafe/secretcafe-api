@@ -322,6 +322,19 @@ export class TableService {
       );
     }
 
+    // For AVAILABLE status: simply update the table (no session changes needed)
+    if (tableStatus == "AVAILABLE") {
+      await this.prisma.restaurantTable.update({
+        where: { id: tableId },
+        data: { tableStatus: TableStatus.AVAILABLE },
+      });
+
+      return this.response(
+        `Table is now available`,
+        { status: "AVAILABLE" }
+      );
+    }
+
     // For new session creation (OCCUPIED/RESERVED): perform atomically
     if (tableStatus == "OCCUPIED" || tableStatus == "RESERVED") {
       const enableTimeRate = table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');

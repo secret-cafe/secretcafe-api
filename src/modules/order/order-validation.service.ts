@@ -80,6 +80,20 @@ export class OrderValidationService {
         }
     }
 
+    /**
+     * Throws if the target status is COMPLETED — must go through billing flow.
+     *
+     * Setting an order or item to COMPLETED is only allowed via the billing/payment
+     * process, not through direct status update endpoints.
+     */
+    validateNotDirectlyCompleted(status: OrderStatus): void {
+        if (status === OrderStatus.COMPLETED) {
+            throwBadRequestException(
+                'Cannot set status to COMPLETED directly. Complete the billing/payment flow instead.',
+            );
+        }
+    }
+
     // #endregion
 
     // #region Duplicate Detection

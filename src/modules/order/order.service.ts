@@ -327,8 +327,7 @@ export class OrderService {
                 id: orderId,
                 status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
             },
-            select: this.orderSelect,
-            orderBy: { createdAt: 'desc' },
+            select: this.orderSelect
         });
 
         if (!orders.length) {
@@ -350,8 +349,7 @@ export class OrderService {
             select: {
                 ...this.orderSelect,
                 table: { select: { id: true, name: true } },
-            },
-            orderBy: { createdAt: 'desc' },
+            }
         });
 
         const grouped = Object.values(

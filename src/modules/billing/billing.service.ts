@@ -308,7 +308,6 @@ export class BillingService {
   public async getBillByOrder(orderId: number) {
     const billing = await this.prisma.billing.findFirst({
       where: { orderId },
-      orderBy: { createdAt: 'desc' },
       include: {
         session: {
           select: {
@@ -366,7 +365,6 @@ export class BillingService {
    */
   public async getAllBills() {
     const bills = await this.prisma.billing.findMany({
-      orderBy: { createdAt: 'desc' },
       include: {
         session: {
           select: {

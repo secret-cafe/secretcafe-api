@@ -10,6 +10,7 @@ import { CloudinaryModule } from './common/upload/cloudinary/cloudinary.module';
 import { TableModule } from './modules/table/table.module';
 import { OrderModule } from './modules/order/order.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { SeedModule } from './modules/seed/seed.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { BillingModule } from './modules/billing/billing.module';
       isGlobal: true,
     }),
     CloudinaryModule,
+    SeedModule,
     AuthModule,
     UserModule,
     RoleModule,

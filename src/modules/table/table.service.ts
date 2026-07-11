@@ -91,10 +91,7 @@ export class TableService {
       where: {
         deletedAt: null,
       },
-      select: this.tableSelect,
-      orderBy: {
-        id: 'desc',
-      },
+      select: this.tableSelect
     });
 
     return this.response(

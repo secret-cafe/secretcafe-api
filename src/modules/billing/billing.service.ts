@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
-import { Prisma, SessionStatus, PaymentStatus, OrderStatus, TableType } from 'generated/prisma/client';
+import { Prisma, SessionStatus, PaymentStatus, OrderStatus, TableType, PaymentMethod } from 'generated/prisma/client';
 import { OrderStatusHistoryService } from '../order/order-status-history.service';
 
 @Injectable()
@@ -141,8 +141,8 @@ export class BillingService {
     const billNumber = await this.generateBillNumber();
 
     // 9. Create billing record within a transaction
-    const billing = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.billing.create({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.billing.create({
         data: {
           sessionId: session.id,
           orderId: order?.id ?? null,
@@ -154,43 +154,7 @@ export class BillingService {
           mobileNumber: mobileNumber || null,
           notes: notes || null,
           createdBy: userId || null,
-        },
-        include: {
-          session: {
-            select: {
-              id: true,
-              tableId: true,
-              guestCount: true,
-              startedAt: true,
-              timerStartedAt: true,
-              totalMinutes: true,
-              timeChargeAmount: true,
-              table: {
-                select: { id: true, name: true, type: true },
-              },
-            },
-          },
-          order: order
-            ? {
-                select: {
-                  id: true,
-                  orderNumber: true,
-                  items: {
-                    where: { isCancelled: false },
-                    include: {
-                      menuItem: { select: { id: true, name: true, price: true } },
-                      orderSubMenuItem: {
-                        where: { isCancelled: false },
-                        include: {
-                          subMenuItem: { select: { id: true, name: true, price: true } },
-                        },
-                      },
-                    },
-                  },
-                },
-              }
-            : false,
-        },
+        }
       });
 
       // Update the order's payment status if an order exists
@@ -200,14 +164,11 @@ export class BillingService {
           data: { paymentStatus: PaymentStatus.UNPAID },
         });
       }
-
-      return created;
     });
 
     return {
       status: true,
-      message: 'Bill generated successfully.',
-      data: this.transformBillResponse(billing),
+      message: 'Bill generated successfully.'
     };
   }
 
@@ -218,7 +179,7 @@ export class BillingService {
    * (if an order is linked), and logs the status transition.
    */
   public async payBill(dto: PayBillDto) {
-    const { billingId, paymentMethod, notes } = dto;
+    const { billingId, paymentMethod, cashAmount, onlineAmount, notes } = dto;
 
     const billing = await this.prisma.billing.findUnique({
       where: { id: billingId },
@@ -227,6 +188,7 @@ export class BillingService {
         orderId: true,
         billNumber: true,
         paymentStatus: true,
+        totalAmount: true,
       },
     });
 
@@ -245,34 +207,39 @@ export class BillingService {
       return;
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const paid = await tx.billing.update({
+    // Validate CASH_ONLINE split amounts
+    if (paymentMethod === PaymentMethod.CASH_ONLINE) {
+      if (cashAmount === undefined || onlineAmount === undefined) {
+        throwBadRequestException('cashAmount and onlineAmount are required for CASH_ONLINE payment.');
+        return;
+      }
+
+      const totalSplit = new Prisma.Decimal(cashAmount).add(new Prisma.Decimal(onlineAmount));
+      if (!totalSplit.equals(billing.totalAmount)) {
+        throwBadRequestException(
+          `Cash (${cashAmount}) + Online (${onlineAmount}) = ${totalSplit} does not match bill total (${billing.totalAmount}).`,
+        );
+        return;
+      }
+    }
+
+    const updateData: any = {
+      paymentStatus: PaymentStatus.PAID,
+      paymentMethod,
+      paidAt: new Date(),
+      notes: notes || undefined,
+    };
+
+    // Store split amounts for CASH_ONLINE
+    if (paymentMethod === PaymentMethod.CASH_ONLINE) {
+      updateData.cashAmount = cashAmount;
+      updateData.onlineAmount = onlineAmount;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.billing.update({
         where: { id: billingId },
-        data: {
-          paymentStatus: PaymentStatus.PAID,
-          paymentMethod,
-          paidAt: new Date(),
-          notes: notes || undefined,
-        },
-        include: {
-          session: {
-            select: {
-              id: true,
-              tableId: true,
-              guestCount: true,
-              startedAt: true,
-              table: {
-                select: { id: true, name: true, type: true },
-              },
-            },
-          },
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-            },
-          },
-        },
+        data: updateData,
       });
 
       // Mark the order and all non-cancelled items as COMPLETED
@@ -291,8 +258,6 @@ export class BillingService {
           },
         });
       }
-
-      return paid;
     });
 
     // Log the order-level COMPLETED transition
@@ -308,8 +273,7 @@ export class BillingService {
 
     return {
       status: true,
-      message: 'Payment recorded successfully.',
-      data: this.transformBillResponse(updated),
+      message: 'Payment recorded successfully.'
     };
   }
 
@@ -330,39 +294,7 @@ export class BillingService {
 
     const billing = await this.prisma.billing.findFirst({
       where: { sessionId: session.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        session: {
-          select: {
-            id: true,
-            tableId: true,
-            guestCount: true,
-            startedAt: true,
-            endedAt: true,
-            table: {
-              select: { id: true, name: true, type: true },
-            },
-          },
-        },
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            items: {
-              where: { isCancelled: false },
-              include: {
-                menuItem: { select: { id: true, name: true, price: true } },
-                orderSubMenuItem: {
-                  where: { isCancelled: false },
-                  include: {
-                    subMenuItem: { select: { id: true, name: true, price: true } },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      orderBy: { createdAt: 'asc' },
     });
 
     if (!billing) {
@@ -382,27 +314,7 @@ export class BillingService {
    */
   public async getAllBills() {
     const bills = await this.prisma.billing.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        session: {
-          select: {
-            id: true,
-            tableId: true,
-            guestCount: true,
-            startedAt: true,
-            endedAt: true,
-            table: {
-              select: { id: true, name: true, type: true },
-            },
-          },
-        },
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-          },
-        },
-      },
+      orderBy: { createdAt: 'asc' },
     });
 
     return {
@@ -448,50 +360,15 @@ export class BillingService {
       discountAmount: billing.discountAmount,
       serviceCharge: billing.serviceCharge,
       timeChargeAmount: billing.timeChargeAmount,
+      cashAmount: billing.cashAmount,
+      onlineAmount: billing.onlineAmount,
       totalAmount: billing.totalAmount,
       paymentStatus: billing.paymentStatus,
       paymentMethod: billing.paymentMethod,
       paidAt: billing.paidAt,
       mobileNumber: billing.mobileNumber,
       notes: billing.notes,
-      createdAt: billing.createdAt,
-      session: billing.session
-        ? {
-            id: billing.session.id,
-            tableId: billing.session.tableId,
-            tableName: billing.session.table?.name,
-            tableType: billing.session.table?.type,
-            guestCount: billing.session.guestCount,
-            startedAt: billing.session.startedAt,
-            endedAt: billing.session.endedAt,
-          }
-        : null,
-      order: billing.order
-        ? {
-            id: billing.order.id,
-            orderNumber: billing.order.orderNumber,
-            items: billing.order.items
-              ? billing.order.items.map((item: any) => ({
-                  id: item.id,
-                  menuItemId: item.menuItemId,
-                  menuItemName: item.menuItem?.name,
-                  unitPrice: item.unitPrice,
-                  quantity: item.quantity,
-                  totalPrice: item.totalPrice,
-                  notes: item.notes,
-                  subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
-                    id: sub.id,
-                    subMenuItemId: sub.subMenuItemId,
-                    subMenuItemName: sub.subMenuItem?.name,
-                    unitPrice: sub.unitPrice,
-                    quantity: sub.quantity,
-                    totalPrice: sub.totalPrice,
-                    notes: sub.notes,
-                  })),
-                }))
-              : [],
-          }
-        : null,
+      createdAt: billing.createdAt
     };
   }
 

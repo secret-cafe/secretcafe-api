@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf } from 'class-validator';
 import { PaymentMethod } from 'generated/prisma/client';
 
 /** DTO for generating a bill for a table. */
@@ -27,10 +27,24 @@ export class PayBillDto {
   @IsInt()
   billingId!: number;
 
-  /** The payment method used (CASH, UPI, or CARD). */
+  /** The payment method used (CASH, UPI, CARD, or CASH_ONLINE). */
   @IsNotEmpty()
   @IsEnum(PaymentMethod)
   paymentMethod!: PaymentMethod;
+
+  /** Cash amount — required when paymentMethod is CASH_ONLINE. */
+  @ValidateIf((o) => o.paymentMethod === PaymentMethod.CASH_ONLINE)
+  @IsNotEmpty()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  cashAmount?: number;
+
+  /** Online amount — required when paymentMethod is CASH_ONLINE. */
+  @ValidateIf((o) => o.paymentMethod === PaymentMethod.CASH_ONLINE)
+  @IsNotEmpty()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  onlineAmount?: number;
 
   /** Optional notes about the payment. */
   @IsOptional()

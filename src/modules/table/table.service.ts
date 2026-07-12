@@ -60,7 +60,7 @@ export class TableService {
   }
 
   private async generateQrImage(tableToken: string) {
-    const frontendOriginUrl = originUrl[1];
+    const frontendOriginUrl = originUrl[0];
     const qrUrl = `${frontendOriginUrl}/customer?tableToken=${tableToken}`;
 
     const qrImage = await QRCode.toDataURL(qrUrl);

@@ -1,15 +1,15 @@
 import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PaymentMethod } from 'generated/prisma/client';
 
-/** DTO for generating a bill for an order. */
+/** DTO for generating a bill for a table. */
 export class GenerateBillDto {
-  /** The ID of the order to generate a bill for. */
+  /** The ID of the table to generate a bill for. */
   @IsNotEmpty()
   @IsInt()
-  orderId!: number;
+  tableId!: number;
 
   /** Optional mobile number to include on the bill. */
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   @MaxLength(20)
   mobileNumber?: string;

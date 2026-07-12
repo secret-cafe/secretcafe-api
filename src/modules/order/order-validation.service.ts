@@ -27,7 +27,7 @@ export class OrderValidationService {
     // #region Role Permissions (Single Source of Truth)
 
     private readonly rolePermissions: Record<Role, OrderStatus[]> = {
-        [Role.SUPER_ADMIN]: [OrderStatus.ACCEPTED, OrderStatus.COMPLETED],
+        [Role.SUPER_ADMIN]: [OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED, OrderStatus.CANCELLED, OrderStatus.COMPLETED],
         [Role.ADMIN]: [OrderStatus.ACCEPTED, OrderStatus.COMPLETED],
         [Role.CHEF]: [OrderStatus.PREPARING, OrderStatus.READY],
         [Role.WAITER]: [OrderStatus.SERVED, OrderStatus.CANCELLED, OrderStatus.COMPLETED],

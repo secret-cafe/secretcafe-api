@@ -10,9 +10,9 @@ export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   /**
-   * Generates a bill for an order.
-   * Validates that all order items are served before generating.
-   * Requires ADMIN or WAITER role.
+   * Generates a bill for a table.
+   * - FAMILY: requires an order with all items SERVED
+   * - POD/HALL: bills by time charge; if order exists, validates items served too
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Post('generate')
@@ -26,8 +26,7 @@ export class BillingController {
 
   /**
    * Marks a bill as paid with the specified payment method.
-   * Also marks the order and all items as COMPLETED.
-   * Requires ADMIN or WAITER role.
+   * Also marks the order and all items as COMPLETED (if linked).
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Post('pay')
@@ -36,20 +35,18 @@ export class BillingController {
   }
 
   /**
-   * Retrieves a bill by order ID.
-   * Requires ADMIN or WAITER role.
+   * Retrieves a bill by table ID.
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
-  @Get('order/:orderId')
-  public getBillByOrder(
-    @Param('orderId', ParseIntPipe) orderId: number,
+  @Get('table/:tableId')
+  public getBillByTable(
+    @Param('tableId', ParseIntPipe) tableId: number,
   ) {
-    return this.billingService.getBillByOrder(orderId);
+    return this.billingService.getBillByTable(tableId);
   }
 
   /**
    * Retrieves all bills.
-   * Requires ADMIN or WAITER role.
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Get()

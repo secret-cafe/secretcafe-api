@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
-import { Prisma, SessionStatus, PaymentStatus, OrderStatus } from 'generated/prisma/client';
+import { Prisma, SessionStatus, PaymentStatus, OrderStatus, TableType } from 'generated/prisma/client';
 import { OrderStatusHistoryService } from '../order/order-status-history.service';
 
 @Injectable()
@@ -13,123 +13,143 @@ export class BillingService {
   ) { }
 
   /**
-   * Generates a bill for an order.
+   * Generates a bill for a table.
    *
-   * Validates the order exists, is not cancelled, all items are SERVED,
-   * and no unpaid bill already exists. Calculates the subtotal from all
-   * non-cancelled order items and sub-items, then creates a Billing record.
+   * **FAMILY tables:** Requires an order with all items SERVED. Total = item subtotal.
+   * **POD / HALL tables:** Can bill with or without an order. Includes time-based charge
+   * (elapsed minutes × ratePerMinute). If an order exists, validates items are SERVED
+   * and adds item subtotal to the total.
    *
-   * @param dto - The payload containing the order ID, optional mobile number and notes.
+   * @param dto - Payload with tableId, optional mobileNumber and notes.
    * @param userId - The ID of the user generating the bill (optional).
-   * @returns The created billing record.
    */
   public async generateBill(dto: GenerateBillDto, userId?: number) {
-    const { orderId, mobileNumber, notes } = dto;
+    const { tableId, mobileNumber, notes } = dto;
 
-    // Find the order with its items and session
-    const order = await this.prisma.order.findFirst({
-      where: {
-        id: orderId,
-        status: {
-          notIn: [OrderStatus.CANCELLED],
-        },
-      },
+    // 1. Find active session for this table
+    const session = await this.prisma.tableSession.findFirst({
+      where: { tableId, status: SessionStatus.ACTIVE },
       include: {
-        session: {
-          select: {
-            id: true,
-            status: true,
-            tableId: true,
-            guestCount: true,
-            startedAt: true,
-            table: {
-              select: { id: true, name: true, type: true },
-            },
-          },
-        },
-        items: {
-          where: { isCancelled: false },
-          include: {
-            orderSubMenuItem: {
-              where: { isCancelled: false },
-            },
-          },
+        table: {
+          select: { id: true, name: true, type: true, enableTimeRate: true, ratePerMinute: true, chargePerPerson: true },
         },
       },
     });
 
-    if (!order) {
-      throwBadRequestException('Order not found or has been cancelled.');
+    if (!session) {
+      throwBadRequestException('No active session found for this table.');
       return;
     }
 
-    // Validate session is active
-    if (order.session.status !== SessionStatus.ACTIVE) {
-      throwBadRequestException(
-        `Cannot generate bill for a ${order.session.status.toLowerCase()} session.`,
-      );
-      return;
-    }
+    const tableType = session.table.type;
+    const isTimeRateTable = tableType === TableType.POD || tableType === TableType.HALL;
 
-    // Validate all non-cancelled items are SERVED
-    const nonServedItems = order.items.filter(
-      (item) => item.status !== OrderStatus.SERVED,
-    );
-
-    if (nonServedItems.length > 0) {
-      const itemNames = nonServedItems
-        .map((item) => `Item #${item.id} (status: ${item.status})`)
-        .join(', ');
-      throwBadRequestException(
-        `Cannot generate bill. All items must be served first. Pending items: ${itemNames}`,
-      );
-      return;
-    }
-
-    // Check for existing unpaid bill for this order
+    // 2. Check for existing unpaid bill for this session
     const existingBill = await this.prisma.billing.findFirst({
       where: {
-        orderId,
+        sessionId: session.id,
         paymentStatus: PaymentStatus.UNPAID,
       },
     });
 
     if (existingBill) {
       throwBadRequestException(
-        `An unpaid bill (${existingBill.billNumber}) already exists for this order.`,
+        `An unpaid bill (${existingBill.billNumber}) already exists for this session.`,
       );
       return;
     }
 
-    // Calculate subtotal from all non-cancelled items and sub-items
-    let subtotal = new Prisma.Decimal(0);
+    // 3. Find any non-cancelled order for this session
+    const order = await this.prisma.order.findFirst({
+      where: {
+        sessionId: session.id,
+        status: { notIn: [OrderStatus.CANCELLED] },
+      },
+      include: {
+        items: {
+          where: { isCancelled: false },
+          include: {
+            orderSubMenuItem: { where: { isCancelled: false } },
+          },
+        },
+      },
+    });
 
-    for (const item of order.items) {
-      subtotal = subtotal.add(item.totalPrice);
-      for (const sub of item.orderSubMenuItem) {
-        subtotal = subtotal.add(sub.totalPrice);
+    // 4. Validate order requirements per table type
+    if (tableType === TableType.FAMILY) {
+      // FAMILY tables MUST have an order with served items
+      if (!order) {
+        throwBadRequestException('No active order found for this FAMILY table. An order is required for billing.');
+        return;
+      }
+
+      const nonServedItems = order.items.filter((item) => item.status !== OrderStatus.SERVED);
+      if (nonServedItems.length > 0) {
+        const names = nonServedItems.map((i) => `Item #${i.id} (status: ${i.status})`).join(', ');
+        throwBadRequestException(`All items must be served first. Pending: ${names}`);
+        return;
+      }
+    } else if (isTimeRateTable && order) {
+      // POD/HALL: if an order exists, validate items are served
+      const nonServedItems = order.items.filter((item) => item.status !== OrderStatus.SERVED);
+      if (nonServedItems.length > 0) {
+        const names = nonServedItems.map((i) => `Item #${i.id} (status: ${i.status})`).join(', ');
+        throwBadRequestException(`All items must be served first. Pending: ${names}`);
+        return;
       }
     }
 
-    if (subtotal.isZero()) {
-      throwBadRequestException(
-        'Cannot generate bill with zero total. No active items in the order.',
-      );
+    // 5. Calculate item subtotal (if order exists)
+    let itemSubtotal = new Prisma.Decimal(0);
+    if (order) {
+      for (const item of order.items) {
+        itemSubtotal = itemSubtotal.add(item.totalPrice);
+        for (const sub of item.orderSubMenuItem) {
+          itemSubtotal = itemSubtotal.add(sub.totalPrice);
+        }
+      }
+    }
+
+    // 6. Calculate time charge (POD / HALL with time rate enabled)
+    let timeChargeAmount: Prisma.Decimal | null = null;
+    let totalMinutes: number | null = null;
+
+    if (isTimeRateTable && session.enableTimeRate && session.ratePerMinute) {
+      const startTime = session.timerStartedAt ?? session.startedAt;
+      if (!startTime) {
+        throwBadRequestException('Timer not started for this session. Cannot calculate time charge.');
+        return;
+      }
+      const end = new Date();
+      const elapsedMinutes = Math.ceil((end.getTime() - startTime.getTime()) / (1000 * 60));
+
+      totalMinutes = elapsedMinutes;
+      const rate = Number(session.ratePerMinute);
+      const multiplier = session.chargePerPerson ? session.guestCount : 1;
+      timeChargeAmount = new Prisma.Decimal(rate * elapsedMinutes * multiplier);
+    }
+
+    // 7. Total
+    const totalAmount = itemSubtotal.add(timeChargeAmount ?? new Prisma.Decimal(0));
+
+    if (totalAmount.isZero()) {
+      throwBadRequestException('Cannot generate bill with zero total. No charges to bill.');
       return;
     }
 
-    // Generate a unique bill number
+    // 8. Generate bill number
     const billNumber = await this.generateBillNumber();
 
-    // Create the billing record within a transaction
+    // 9. Create billing record within a transaction
     const billing = await this.prisma.$transaction(async (tx) => {
       const created = await tx.billing.create({
         data: {
-          sessionId: order.sessionId,
-          orderId: order.id,
+          sessionId: session.id,
+          orderId: order?.id ?? null,
           billNumber,
-          subtotal,
-          totalAmount: subtotal, // For now, total = subtotal (no tax/discount/service charge)
+          subtotal: itemSubtotal,
+          timeChargeAmount,
+          totalAmount,
           paymentStatus: PaymentStatus.UNPAID,
           mobileNumber: mobileNumber || null,
           notes: notes || null,
@@ -142,41 +162,44 @@ export class BillingService {
               tableId: true,
               guestCount: true,
               startedAt: true,
+              timerStartedAt: true,
+              totalMinutes: true,
+              timeChargeAmount: true,
               table: {
                 select: { id: true, name: true, type: true },
               },
             },
           },
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              items: {
-                where: { isCancelled: false },
-                include: {
-                  menuItem: {
-                    select: { id: true, name: true, price: true },
-                  },
-                  orderSubMenuItem: {
+          order: order
+            ? {
+                select: {
+                  id: true,
+                  orderNumber: true,
+                  items: {
                     where: { isCancelled: false },
                     include: {
-                      subMenuItem: {
-                        select: { id: true, name: true, price: true },
+                      menuItem: { select: { id: true, name: true, price: true } },
+                      orderSubMenuItem: {
+                        where: { isCancelled: false },
+                        include: {
+                          subMenuItem: { select: { id: true, name: true, price: true } },
+                        },
                       },
                     },
                   },
                 },
-              },
-            },
-          },
+              }
+            : false,
         },
       });
 
-      // Update the order's payment status to UNPAID (explicit)
-      await tx.order.update({
-        where: { id: order.id },
-        data: { paymentStatus: PaymentStatus.UNPAID },
-      });
+      // Update the order's payment status if an order exists
+      if (order) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { paymentStatus: PaymentStatus.UNPAID },
+        });
+      }
 
       return created;
     });
@@ -191,12 +214,8 @@ export class BillingService {
   /**
    * Marks a bill as paid.
    *
-   * Validates the billing record exists and is unpaid, then updates
-   * the payment status, method, and timestamp within a transaction.
-   * Also marks the order and all non-cancelled order items as COMPLETED.
-   *
-   * @param dto - The payload containing the billing ID and payment method.
-   * @returns The updated billing record.
+   * Updates billing status, marks order and all non-cancelled items as COMPLETED
+   * (if an order is linked), and logs the status transition.
    */
   public async payBill(dto: PayBillDto) {
     const { billingId, paymentMethod, notes } = dto;
@@ -259,13 +278,8 @@ export class BillingService {
       // Mark the order and all non-cancelled items as COMPLETED
       if (billing.orderId) {
         await tx.orderItem.updateMany({
-          where: {
-            orderId: billing.orderId,
-            isCancelled: false,
-          },
-          data: {
-            status: OrderStatus.COMPLETED,
-          },
+          where: { orderId: billing.orderId, isCancelled: false },
+          data: { status: OrderStatus.COMPLETED },
         });
 
         await tx.order.update({
@@ -281,7 +295,7 @@ export class BillingService {
       return paid;
     });
 
-    // Log the order-level COMPLETED transition triggered by payment
+    // Log the order-level COMPLETED transition
     if (billing.orderId) {
       await this.history.log({
         orderId: billing.orderId,
@@ -300,14 +314,23 @@ export class BillingService {
   }
 
   /**
-   * Retrieves a bill by order ID.
-   *
-   * @param orderId - The ID of the order to look up.
-   * @returns The billing record for the order.
+   * Retrieves a bill by table ID (looks up via the latest session).
    */
-  public async getBillByOrder(orderId: number) {
+  public async getBillByTable(tableId: number) {
+    const session = await this.prisma.tableSession.findFirst({
+      where: { tableId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!session) {
+      throwNotFoundException(`No session found for table ID ${tableId}.`);
+      return;
+    }
+
     const billing = await this.prisma.billing.findFirst({
-      where: { orderId },
+      where: { sessionId: session.id },
+      orderBy: { createdAt: 'desc' },
       include: {
         session: {
           select: {
@@ -328,15 +351,11 @@ export class BillingService {
             items: {
               where: { isCancelled: false },
               include: {
-                menuItem: {
-                  select: { id: true, name: true, price: true },
-                },
+                menuItem: { select: { id: true, name: true, price: true } },
                 orderSubMenuItem: {
                   where: { isCancelled: false },
                   include: {
-                    subMenuItem: {
-                      select: { id: true, name: true, price: true },
-                    },
+                    subMenuItem: { select: { id: true, name: true, price: true } },
                   },
                 },
               },
@@ -347,7 +366,7 @@ export class BillingService {
     });
 
     if (!billing) {
-      throwNotFoundException(`No bill found for order ID ${orderId}.`);
+      throwNotFoundException(`No bill found for table ID ${tableId}.`);
       return;
     }
 
@@ -360,11 +379,10 @@ export class BillingService {
 
   /**
    * Retrieves all bills, ordered by most recent first.
-   *
-   * @returns A list of all billing records.
    */
   public async getAllBills() {
     const bills = await this.prisma.billing.findMany({
+      orderBy: { createdAt: 'desc' },
       include: {
         session: {
           select: {
@@ -397,25 +415,18 @@ export class BillingService {
   // #region Private Helpers
 
   /**
-   * Generates a unique bill number.
-   *
-   * Format: BILL-{YYYYMMDD}-{XXXX} where XXXX is a zero-padded
-   * sequential number based on the count of bills created today.
+   * Generates a unique bill number in the format BILL-{YYYYMMDD}-{XXXX}.
    */
   private async generateBillNumber(): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
 
-    // Count bills created today
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
     const count = await this.prisma.billing.count({
       where: {
-        createdAt: {
-          gte: startOfDay,
-          lt: endOfDay,
-        },
+        createdAt: { gte: startOfDay, lt: endOfDay },
       },
     });
 
@@ -436,6 +447,7 @@ export class BillingService {
       taxAmount: billing.taxAmount,
       discountAmount: billing.discountAmount,
       serviceCharge: billing.serviceCharge,
+      timeChargeAmount: billing.timeChargeAmount,
       totalAmount: billing.totalAmount,
       paymentStatus: billing.paymentStatus,
       paymentMethod: billing.paymentMethod,

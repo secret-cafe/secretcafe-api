@@ -58,8 +58,6 @@ export class TableService {
     };
   }
 
-  private generateQrToken = () => crypto.randomBytes(8).toString("hex");
-
   private async generateQrImage(tableToken: string) {
     const frontendOriginUrl = originUrl[1];
     const qrUrl = `${frontendOriginUrl}/customer?tableToken=${tableToken}`;
@@ -401,4 +399,6 @@ export class TableService {
       'Table deleted successfully',
     );
   }
+
+  private generateQrToken = () => crypto.randomBytes(8).toString("hex");
 }

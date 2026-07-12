@@ -36,7 +36,11 @@ export class CreateTableDto {
   isActive?: boolean;
 }
 
-export class UpdateTableDto extends PartialType(CreateTableDto) {}
+export class UpdateTableDto extends PartialType(CreateTableDto) {
+  @IsOptional()
+  @IsBoolean()
+  regenerateQr?: boolean;
+}
 
 export class GetTableByTypeDto {
   @IsOptional()

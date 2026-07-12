@@ -26,6 +26,7 @@ export class TableService {
     chargePerPerson: true,
     qrCodeImageUrl: true,
     tableToken: true,
+    publicId: true,
     isActive: true,
   } satisfies Prisma.RestaurantTableSelect;
 
@@ -170,17 +171,37 @@ export class TableService {
   }
 
   public async update(id: number, data: UpdateTableDto) {
-    await this.findTableOrThrow(id);
+    const { regenerateQr, ...tableData } = data;
 
-    const updatedTable = await this.prisma.restaurantTable.update({
+    // Fetch existing table (includes publicId for Cloudinary deletion)
+    const existingTable = await this.findTableOrThrow(id);
+    if (!existingTable) return;
+
+    let updatePayload: any = { ...tableData };
+
+    // If regenerateQr flag is true, generate new token + QR and delete old ones
+    if (regenerateQr) {
+      // Delete old QR image from Cloudinary if it exists
+      if (existingTable.publicId) {
+        await this.cloudinaryService.deleteFile(existingTable.publicId);
+      }
+
+      // Generate new token and QR image
+      const newToken = this.generateQrToken();
+      const file = await this.generateQrImage(newToken);
+
+      updatePayload.tableToken = newToken;
+      updatePayload.qrCodeImageUrl = file?.url ?? null;
+      updatePayload.publicId = file?.public_id ?? null;
+    }
+
+    await this.prisma.restaurantTable.update({
       where: { id },
-      data,
-      select: this.tableSelect,
+      data: updatePayload
     });
 
     return this.response(
       'Table updated successfully',
-      updatedTable,
     );
   }
 

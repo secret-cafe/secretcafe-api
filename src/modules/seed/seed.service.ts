@@ -10,7 +10,7 @@ export class SeedService {
     async seed() {
         try {
 
-            // Roles Seeder
+            // #region - Roles Seeder
             const roles = [
                 { name: "Super Admin", description: "Full system access" },
                 { name: "Admin", description: "Administrative access" },
@@ -31,7 +31,7 @@ export class SeedService {
 
             // #endregion =================================================
 
-            // UserInfo Seeder
+            // #region - UserInfo Seeder
             const hashedPassword = await bcrypt.hash("123456", 10);
 
             const defaultUsers = [
@@ -93,7 +93,7 @@ export class SeedService {
 
             // #endregion ========================================
 
-            // Table Seeder
+            // #region - Table Seeder
             const tables = [
                 { name: "F-1", type: TableType.FAMILY, capacity: 4 },
                 { name: "F-2", type: TableType.FAMILY, capacity: 4 },
@@ -123,7 +123,7 @@ export class SeedService {
 
             // #endregion ==================================================
 
-            // Categories seeder
+            // #region - Categories seeder
             const categories = [
                 {
                     name: "Burgers",
@@ -205,7 +205,7 @@ export class SeedService {
 
             // #endregion =========================================
 
-            // Menus & Submenus seeder
+            // #region - Menus & Submenus seeder
             const menus = [
                 // ---------------- Burgers ----------------
                 {

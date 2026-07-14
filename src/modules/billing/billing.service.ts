@@ -295,6 +295,42 @@ export class BillingService {
     const billing = await this.prisma.billing.findFirst({
       where: { sessionId: session.id },
       orderBy: { createdAt: 'asc' },
+      include: {
+        session: {
+          select: {
+            id: true,
+            tableId: true,
+            guestCount: true,
+            startedAt: true,
+            endedAt: true,
+            table: {
+              select: { id: true, name: true, type: true },
+            },
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            items: {
+              where: { isCancelled: false },
+              include: {
+                menuItem: {
+                  select: { id: true, name: true, price: true },
+                },
+                orderSubMenuItem: {
+                  where: { isCancelled: false },
+                  include: {
+                    subMenuItem: {
+                      select: { id: true, name: true, price: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!billing) {
@@ -315,6 +351,26 @@ export class BillingService {
   public async getAllBills() {
     const bills = await this.prisma.billing.findMany({
       orderBy: { createdAt: 'asc' },
+      include: {
+        session: {
+          select: {
+            id: true,
+            tableId: true,
+            guestCount: true,
+            startedAt: true,
+            endedAt: true,
+            table: {
+              select: { id: true, name: true, type: true },
+            },
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+          },
+        },
+      },
     });
 
     return {
@@ -351,7 +407,7 @@ export class BillingService {
    */
   private transformBillResponse(billing: any): any {
     return {
-      id: billing.id,
+      billingId: billing.id,
       billNumber: billing.billNumber,
       sessionId: billing.sessionId,
       orderId: billing.orderId,
@@ -368,7 +424,44 @@ export class BillingService {
       paidAt: billing.paidAt,
       mobileNumber: billing.mobileNumber,
       notes: billing.notes,
-      createdAt: billing.createdAt
+      createdAt: billing.createdAt,
+      session: billing.session
+        ? {
+            tableSessionId: billing.session.id,
+            tableId: billing.session.tableId,
+            tableName: billing.session.table?.name,
+            tableType: billing.session.table?.type,
+            guestCount: billing.session.guestCount,
+            startedAt: billing.session.startedAt,
+            endedAt: billing.session.endedAt,
+          }
+        : null,
+      order: billing.order
+        ? {
+            orderId: billing.order.id,
+            orderNumber: billing.order.orderNumber,
+            items: billing.order.items
+              ? billing.order.items.map((item: any) => ({
+                  orderItemId: item.id,
+                  menuItemId: item.menuItemId,
+                  menuItemName: item.menuItem?.name,
+                  unitPrice: item.unitPrice,
+                  quantity: item.quantity,
+                  totalPrice: item.totalPrice,
+                  notes: item.notes,
+                  subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
+                    orderSubMenuItemId: sub.id,
+                    subMenuItemId: sub.subMenuItemId,
+                    subMenuItemName: sub.subMenuItem?.name,
+                    unitPrice: sub.unitPrice,
+                    quantity: sub.quantity,
+                    totalPrice: sub.totalPrice,
+                    notes: sub.notes,
+                  })),
+                }))
+              : [],
+          }
+        : null,
     };
   }
 

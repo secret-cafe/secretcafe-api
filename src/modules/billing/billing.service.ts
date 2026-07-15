@@ -357,10 +357,12 @@ export class BillingService {
             id: true,
             tableId: true,
             guestCount: true,
-            startedAt: true,
-            endedAt: true,
             table: {
-              select: { id: true, name: true, type: true },
+              select: {
+                id: true,
+                name: true,
+                type: true,
+              },
             },
           },
         },
@@ -368,6 +370,35 @@ export class BillingService {
           select: {
             id: true,
             orderNumber: true,
+            items: {
+              select: {
+                id: true,
+                status: true,
+                quantity: true,
+                unitPrice: true,
+                totalPrice: true,
+                notes: true,
+                isCancelled: true,
+                menuItem: {
+                  select: { 
+                    name: true,
+                  },
+                },
+                orderSubMenuItem: {
+                  select: {
+                    id: true,
+                    quantity: true,
+                    unitPrice: true,
+                    totalPrice: true,
+                    notes: true,
+                    isCancelled: true,
+                    subMenuItem: {
+                      select: { name: true },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -427,40 +458,38 @@ export class BillingService {
       createdAt: billing.createdAt,
       session: billing.session
         ? {
-            tableSessionId: billing.session.id,
-            tableId: billing.session.tableId,
-            tableName: billing.session.table?.name,
-            tableType: billing.session.table?.type,
-            guestCount: billing.session.guestCount,
-            startedAt: billing.session.startedAt,
-            endedAt: billing.session.endedAt,
-          }
+          tableSessionId: billing.session.id,
+          tableId: billing.session.tableId,
+          tableName: billing.session.table?.name,
+          tableType: billing.session.table?.type,
+          guestCount: billing.session.guestCount,
+        }
         : null,
       order: billing.order
         ? {
-            orderId: billing.order.id,
-            orderNumber: billing.order.orderNumber,
-            items: billing.order.items
-              ? billing.order.items.map((item: any) => ({
-                  orderItemId: item.id,
-                  menuItemId: item.menuItemId,
-                  menuItemName: item.menuItem?.name,
-                  unitPrice: item.unitPrice,
-                  quantity: item.quantity,
-                  totalPrice: item.totalPrice,
-                  notes: item.notes,
-                  subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
-                    orderSubMenuItemId: sub.id,
-                    subMenuItemId: sub.subMenuItemId,
-                    subMenuItemName: sub.subMenuItem?.name,
-                    unitPrice: sub.unitPrice,
-                    quantity: sub.quantity,
-                    totalPrice: sub.totalPrice,
-                    notes: sub.notes,
-                  })),
-                }))
-              : [],
-          }
+          orderId: billing.order.id,
+          orderNumber: billing.order.orderNumber,
+          items: billing.order.items
+            ? billing.order.items.map((item: any) => ({
+              orderItemId: item.id,
+              menuItemName: item.menuItem?.name,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+              quantity: item.quantity,
+              notes: item.notes,
+              isCancelled: item.isCancelled,
+              subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
+                orderSubMenuItemId: sub.id,
+                subMenuItemName: sub.subMenuItem?.name,
+                unitPrice: sub.unitPrice,
+                totalPrice: sub.totalPrice,
+                quantity: sub.quantity,
+                isCancelled: sub.isCancelled,
+                notes: sub.notes,
+              })),
+            }))
+            : [],
+        }
         : null,
     };
   }

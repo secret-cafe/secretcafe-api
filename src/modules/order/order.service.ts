@@ -379,6 +379,7 @@ export class OrderService {
 
     // #region Remove All Orders
     public async cleanOrders() {
+        await this.prisma.billing.deleteMany({});
         await this.prisma.orderStatusHistory.deleteMany({});
         await this.prisma.orderSubMenuItem.deleteMany({});
         await this.prisma.orderItem.deleteMany({});

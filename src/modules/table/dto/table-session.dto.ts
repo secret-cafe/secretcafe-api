@@ -15,7 +15,7 @@ export class TableSessionDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  guestCount!: number;
+  guestCount?: number;
 
   @IsOptional()
   @IsString()

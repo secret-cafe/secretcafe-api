@@ -4,12 +4,14 @@ import { throwBadRequestException, throwNotFoundException } from 'src/common/uti
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
 import { Prisma, SessionStatus, PaymentStatus, OrderStatus, TableType, PaymentMethod } from 'generated/prisma/client';
 import { OrderStatusHistoryService } from '../order/order-status-history.service';
+import { TableService } from '../table/table.service';
 
 @Injectable()
 export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly history: OrderStatusHistoryService,
+    private readonly tableService: TableService,
   ) { }
 
   /**
@@ -189,6 +191,9 @@ export class BillingService {
         billNumber: true,
         paymentStatus: true,
         totalAmount: true,
+        session: {
+          select: { tableId: true },
+        },
       },
     });
 
@@ -270,6 +275,12 @@ export class BillingService {
         metadata: { billingId, billNumber: billing.billNumber },
       });
     }
+
+    // Close the table session and set table to CLEANING via TableService
+    await this.tableService.handleTableSession({
+      tableId: billing.session.tableId,
+      status: 'CLEANING',
+    });
 
     return {
       status: true,

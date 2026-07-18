@@ -208,7 +208,7 @@ export class TableService {
   public async handleTableSession(data: TableSessionDto) {
     const tableId = data.tableId;
     const tableStatus = data.status;
-    const { status, guestCount, ...tableSessionData } = data;
+    const { status, guestCount = 0, ...tableSessionData } = data;
 
     const table = await this.findTableOrThrow(tableId);
 

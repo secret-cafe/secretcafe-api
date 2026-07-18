@@ -343,9 +343,6 @@ export class OrderService {
 
     public async getTableWiseOrders() {
         const orders = await this.prisma.order.findMany({
-            where: {
-                status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
-            },
             select: {
                 ...this.orderSelect,
                 table: { select: { id: true, name: true } },

@@ -273,7 +273,7 @@ export class TableService {
       }
 
       // Perform all updates atomically
-      const enableTimeRate = !table.rushMode && table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
+      const enableTimeRate = !table?.rushMode && table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
       const billing = this.calculateTimeCharge(existingSession);
 
       await this.prisma.$transaction(async (tx) => {

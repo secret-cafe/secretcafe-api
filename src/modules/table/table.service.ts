@@ -23,6 +23,7 @@ export class TableService {
     guestCount: true,
     enableTimeRate: true,
     ratePerMinute: true,
+    ratePerHour: true,
     chargePerPerson: true,
     rushMode: true,
     qrCodeImageUrl: true,
@@ -40,7 +41,8 @@ export class TableService {
   }
 
   private calculateTimeCharge(session: any) {
-    if (!session || !session.enableTimeRate) {
+    
+    if (!session || !session.enableTimeRate || session.rushMode) {
       return {
         totalMinutes: 0,
         amount: 0,
@@ -51,8 +53,18 @@ export class TableService {
     const end = session.timerEndedAt || new Date();
 
     const totalMinutes = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60));
+    const multiplier = session.chargePerPerson ? session.guestCount : 1;
 
-    const amount = totalMinutes * Number(session.ratePerMinute || 0) * (session.chargePerPerson ? session.guestCount : 1);
+    let amount: number;
+
+    // HALL tables: use ratePerHour if available
+    if (session.ratePerHour) {
+      const elapsedHours = totalMinutes / 60;
+      amount = elapsedHours * Number(session.ratePerHour) * multiplier;
+    } else {
+      // POD tables: use ratePerMinute
+      amount = totalMinutes * Number(session.ratePerMinute || 0) * multiplier;
+    }
 
     return {
       totalMinutes,
@@ -374,6 +386,7 @@ export class TableService {
             timerStartedAt: enableTimeRate ? new Date() : null,
             enableTimeRate: enableTimeRate,
             ratePerMinute: table?.ratePerMinute,
+            ratePerHour: table?.ratePerHour,
             chargePerPerson: table?.chargePerPerson,
             rushMode: table?.rushMode ?? false,
           },

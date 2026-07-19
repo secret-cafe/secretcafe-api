@@ -117,7 +117,7 @@ export class BillingService {
     let timeChargeAmount: Prisma.Decimal | null = null;
     let totalMinutes: number | null = null;
 
-    if (!session.rushMode && isTimeRateTable && session.enableTimeRate && session.ratePerMinute) {
+    if (!session.rushMode && isTimeRateTable && session.enableTimeRate) {
       const startTime = session.timerStartedAt ?? session.startedAt;
       if (!startTime) {
         throwBadRequestException('Timer not started for this session. Cannot calculate time charge.');
@@ -125,11 +125,18 @@ export class BillingService {
       }
       const end = new Date();
       const elapsedMinutes = Math.ceil((end.getTime() - startTime.getTime()) / (1000 * 60));
+      const multiplier = session.chargePerPerson ? session.guestCount : 1;
 
       totalMinutes = elapsedMinutes;
-      const rate = Number(session.ratePerMinute);
-      const multiplier = session.chargePerPerson ? session.guestCount : 1;
-      timeChargeAmount = new Prisma.Decimal(rate * elapsedMinutes * multiplier);
+
+      // HALL tables: use ratePerHour if available
+      if (session.ratePerHour) {
+        const elapsedHours = elapsedMinutes / 60;
+        timeChargeAmount = new Prisma.Decimal(Number(session.ratePerHour) * elapsedHours * multiplier);
+      } else if (session.ratePerMinute) {
+        // POD / default: use ratePerMinute
+        timeChargeAmount = new Prisma.Decimal(Number(session.ratePerMinute) * elapsedMinutes * multiplier);
+      }
     }
 
     // 7. Total

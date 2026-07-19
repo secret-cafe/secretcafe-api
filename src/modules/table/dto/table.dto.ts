@@ -32,6 +32,14 @@ export class CreateTableDto {
   ratePerMinute?: number;
 
   @IsOptional()
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'ratePerHour must be a valid decimal number' },
+  )
+  @Min(0)
+  ratePerHour?: number;
+
+  @IsOptional()
   @IsBoolean()
   rushMode?: boolean;
 

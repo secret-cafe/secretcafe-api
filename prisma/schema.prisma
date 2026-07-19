@@ -176,6 +176,7 @@ model RestaurantTable {
   publicId        String?     @db.VarChar(255)
   enableTimeRate  Boolean     @default(false)
   ratePerMinute   Decimal?    @db.Decimal(10, 2)
+  ratePerHour     Decimal?    @db.Decimal(10, 2)
   chargePerPerson Boolean?
   rushMode        Boolean     @default(false)
   isActive        Boolean     @default(true)
@@ -201,6 +202,7 @@ model TableSession {
   guestCount       Int
   enableTimeRate   Boolean       @default(false)
   ratePerMinute    Decimal?      @db.Decimal(10, 2)
+  ratePerHour      Decimal?      @db.Decimal(10, 2)
   chargePerPerson  Boolean?
   rushMode         Boolean       @default(false)
   totalMinutes     Int?          @default(0)

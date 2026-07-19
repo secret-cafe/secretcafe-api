@@ -101,7 +101,7 @@ export class SeedService {
                 { name: "F-4", type: TableType.FAMILY, capacity: 4 },
                 { name: "P-1", type: TableType.POD, capacity: 4 },
                 { name: "P-2", type: TableType.POD, capacity: 2 },
-                { name: "H-2", type: TableType.HALL, capacity: 10 },
+                { name: "H-1", type: TableType.HALL, capacity: 10 },
                 { name: "H-2", type: TableType.HALL, capacity: 15 },
             ];
 

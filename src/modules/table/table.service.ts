@@ -24,6 +24,7 @@ export class TableService {
     enableTimeRate: true,
     ratePerMinute: true,
     chargePerPerson: true,
+    rushMode: true,
     qrCodeImageUrl: true,
     tableToken: true,
     publicId: true,
@@ -272,7 +273,7 @@ export class TableService {
       }
 
       // Perform all updates atomically
-      const enableTimeRate = table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
+      const enableTimeRate = !table.rushMode && table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
       const billing = this.calculateTimeCharge(existingSession);
 
       await this.prisma.$transaction(async (tx) => {
@@ -374,6 +375,7 @@ export class TableService {
             enableTimeRate: enableTimeRate,
             ratePerMinute: table?.ratePerMinute,
             chargePerPerson: table?.chargePerPerson,
+            rushMode: table?.rushMode ?? false,
           },
         });
       });

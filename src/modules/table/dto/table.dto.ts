@@ -33,6 +33,10 @@ export class CreateTableDto {
 
   @IsOptional()
   @IsBoolean()
+  rushMode?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 

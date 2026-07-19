@@ -113,10 +113,11 @@ export class BillingService {
     }
 
     // 6. Calculate time charge (POD / HALL with time rate enabled)
+    //    Skip time-based and per-person charges when rushMode is active.
     let timeChargeAmount: Prisma.Decimal | null = null;
     let totalMinutes: number | null = null;
 
-    if (isTimeRateTable && session.enableTimeRate && session.ratePerMinute) {
+    if (!session.rushMode && isTimeRateTable && session.enableTimeRate && session.ratePerMinute) {
       const startTime = session.timerStartedAt ?? session.startedAt;
       if (!startTime) {
         throwBadRequestException('Timer not started for this session. Cannot calculate time charge.');

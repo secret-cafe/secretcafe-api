@@ -268,6 +268,20 @@ export class TableService {
         throwBadRequestException(`Cannot set table to ${tableStatus}. Active orders exist.`);
       }
 
+      // For POD/HALL time-rate tables without an order, enforce that a bill
+      // has been generated (prevents skipping billing for time-only charges).
+      if (!existingOrder && (table?.type === TableType.POD || table?.type === TableType.HALL)) {
+        const anyBill = await this.prisma.billing.findFirst({
+          where: { sessionId: existingSession.id },
+        });
+
+        if (!anyBill) {
+          throwBadRequestException(
+            `Cannot close table. A bill must be generated first for ${table?.type} tables.`
+          );
+        }
+      }
+
       // Validate no unpaid bills exist for this session
       const unpaidBill = await this.prisma.billing.findFirst({
         where: {

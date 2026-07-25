@@ -37,12 +37,16 @@ export class CreateMenuDto {
 }
 
 class SubMenuDto {
-  @IsNotEmpty()
+  @IsOptional()
+  @IsNumber()
+  subMenuItemId?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(100)
   name!: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   price!: string;
 

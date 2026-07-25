@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { isNonEmptyString } from 'src/common/utils/utils';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
@@ -10,6 +10,11 @@ import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.servi
 export class MenuService {
     constructor(private prisma: PrismaService, private readonly cloudinaryService: CloudinaryService) { }
 
+    /**
+     * Base select for fetching menu items.
+     * Internally uses the new MenuSubMenu junction table,
+     * but the response is transformed back to `subMenuItems` for API compatibility.
+     */
     private readonly menuSelect = {
         category: {
             select: {
@@ -24,17 +29,39 @@ export class MenuService {
         available: true,
         description: true,
         imageUrl: true,
-        subMenuItems: {
+        menuSubMenus: {
+            where: { deletedAt: null },
             select: {
-                id: true,
-                name: true,
-                price: true,
-                available: true,
-                description: true,
-                imageUrl: true,
+                subMenuItem: {
+                    select: {
+                        id: true,
+                        name: true,
+                        price: true,
+                        available: true,
+                        description: true,
+                        imageUrl: true,
+                    },
+                },
             },
         },
     };
+
+    /**
+     * Transforms a raw menu item (with menuSubMenus) into the legacy
+     * API response format with `subMenuItems` array.
+     */
+    private transformToLegacyFormat(menu: any): any {
+        if (!menu) return menu;
+
+        const { menuSubMenus, ...rest } = menu;
+
+        return {
+            ...rest,
+            subMenuItems: menuSubMenus
+                ?.filter((msm: any) => msm.subMenuItem)
+                .map((msm: any) => msm.subMenuItem) ?? [],
+        };
+    }
 
     private async findMenuOrThrow(menuId: number, includePublicId = false) {
         const menu = await this.prisma.menuItem.findFirst({
@@ -80,13 +107,8 @@ export class MenuService {
                     publicId: file?.filename ?? null,
                     imageUrl: file?.path ?? null,
                     ...(submenu && submenu.length > 0 && {
-                        subMenuItems: {
-                            create: submenu.map((item) => ({
-                                name: item.name!,
-                                price: item.price!,
-                                available: item.available ?? true,
-                                description: item.description ?? null,
-                            })),
+                        menuSubMenus: {
+                            create: await this.prepareSubMenuCreates(submenu),
                         },
                     }),
                 },
@@ -106,8 +128,7 @@ export class MenuService {
     }
 
     async findAll() {
-
-        const menu = await this.prisma.menuItem.findMany({
+        const menus = await this.prisma.menuItem.findMany({
             where: {
                 deletedAt: null,
                 category: {
@@ -129,7 +150,7 @@ export class MenuService {
         return {
             status: true,
             message: 'Menu fetched successfully',
-            data: menu,
+            data: menus.map((menu) => this.transformToLegacyFormat(menu)),
         };
     }
 
@@ -139,12 +160,11 @@ export class MenuService {
         return {
             status: true,
             message: 'Menu fetched successfully',
-            data: menu,
+            data: this.transformToLegacyFormat(menu),
         };
     }
 
     async findByCategory(categoryId: number) {
-
         const categoryMenu = await this.prisma.category.findFirst({
             where: {
                 id: categoryId,
@@ -171,7 +191,10 @@ export class MenuService {
         return {
             status: true,
             message: 'Menu fetched successfully',
-            data: categoryMenu,
+            data: {
+                ...categoryMenu,
+                menuItems: categoryMenu.menuItems.map((item) => this.transformToLegacyFormat(item)),
+            },
         };
     }
 
@@ -194,17 +217,17 @@ export class MenuService {
                 where: { id },
                 data: {
                     ...menuData,
-                    subMenuItems: submenu
-                        ? {
-                            deleteMany: {},
-                            create: submenu.map((item) => ({
-                                name: item.name,
-                                price: item.price,
-                                available: item.available ?? true,
-                                description: item.description ?? null,
-                            })),
-                        }
-                        : undefined,
+                    ...(submenu !== undefined && {
+                        menuSubMenus: {
+                            // Soft-delete existing mappings
+                            updateMany: {
+                                where: { deletedAt: null },
+                                data: { deletedAt: new Date() },
+                            },
+                            // Create new mappings
+                            create: await this.prepareSubMenuCreates(submenu),
+                        },
+                    }),
                 },
             });
 
@@ -222,7 +245,6 @@ export class MenuService {
     }
 
     async delete(id: number) {
-
         try {
             await this.findAndDeleteMenuImage(id);
 
@@ -236,9 +258,10 @@ export class MenuService {
                     },
                 });
 
-                await tx.subMenuItem.updateMany({
+                // Soft-delete related MenuSubMenu records
+                await tx.menuSubMenu.updateMany({
                     where: {
-                        menuId: id,
+                        menuItemId: id,
                         deletedAt: null,
                     },
                     data: {
@@ -259,4 +282,69 @@ export class MenuService {
             };
         }
     }
+
+    // #region Private Helpers
+
+    /**
+     * Prepares the data for creating MenuSubMenu records.
+     *
+     * For each submenu item:
+     * - If `subMenuItemId` is provided, uses that existing record directly.
+     * - Otherwise, tries to find an existing SubMenuItem by name.
+     * - If not found, creates a new standalone SubMenuItem.
+     *
+     * Then links via MenuSubMenu.
+     */
+    private async prepareSubMenuCreates(submenu: any[]): Promise<any[]> {
+        const result: any[] = [];
+
+        for (const item of submenu) {
+            let subMenuItem;
+
+            // 1. If subMenuItemId is provided, look up by ID
+            if (item.subMenuItemId) {
+                subMenuItem = await this.prisma.subMenuItem.findFirst({
+                    where: {
+                        id: item.subMenuItemId,
+                        deletedAt: null,
+                    },
+                });
+
+                if (!subMenuItem) {
+                    throwBadRequestException(
+                        `Sub menu item with ID ${item.subMenuItemId} not found.`,
+                    );
+                    return [];
+                }
+            } 
+            // 2. Fall back to find-or-create by name
+            else {
+                subMenuItem = await this.prisma.subMenuItem.findFirst({
+                    where: {
+                        name: item.name!,
+                        deletedAt: null,
+                    },
+                });
+
+                if (!subMenuItem) {
+                    subMenuItem = await this.prisma.subMenuItem.create({
+                        data: {
+                            name: item.name!,
+                            price: item.price!,
+                            available: item.available ?? true,
+                            description: item.description ?? null,
+                        },
+                    });
+                }
+            }
+
+            result.push({
+                subMenuItemId: subMenuItem.id,
+            });
+        }
+
+        return result;
+    }
+
+    // #endregion
 }

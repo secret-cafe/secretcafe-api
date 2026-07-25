@@ -135,7 +135,7 @@ model MenuItem {
 
   // Relations
   category     Category      @relation(fields: [categoryId], references: [id], onUpdate: Cascade)
-  subMenuItems SubMenuItem[]
+  menuSubMenus MenuSubMenu[]
   orderItems   OrderItem[]
 
   @@index([deletedAt])
@@ -144,7 +144,6 @@ model MenuItem {
 
 model SubMenuItem {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
-  menuId      Int       @db.UnsignedInt
   name        String    @db.VarChar(255)
   price       Decimal   @db.Decimal(10, 2)
   available   Boolean   @default(true)
@@ -157,11 +156,28 @@ model SubMenuItem {
   deletedAt   DateTime?
 
   // Relations
-  menuItem          MenuItem           @relation(fields: [menuId], references: [id], onUpdate: Cascade)
+  menuSubMenus      MenuSubMenu[]
   orderSubMenuItems OrderSubMenuItem[]
 
   @@index([deletedAt])
-  @@index([menuId])
+}
+
+model MenuSubMenu {
+  id            Int      @id @default(autoincrement()) @db.UnsignedInt
+  menuItemId    Int      @db.UnsignedInt
+  subMenuItemId Int      @db.UnsignedInt
+  createdAt     DateTime @default(now())
+  createdBy     Int?     @db.UnsignedInt
+  updatedAt     DateTime @updatedAt
+  updatedBy     Int?     @db.UnsignedInt
+  deletedAt     DateTime?
+
+  // Relations
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  subMenuItem SubMenuItem @relation(fields: [subMenuItemId], references: [id], onDelete: Cascade)
+
+  @@index([menuItemId])
+  @@index([subMenuItemId])
 }
 
 model RestaurantTable {

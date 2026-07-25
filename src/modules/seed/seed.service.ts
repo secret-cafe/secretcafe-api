@@ -214,6 +214,8 @@ export class SeedService {
                     price: 149,
                     menuType: "Veg",
                     description: "Veg patty with cheese and fresh vegetables.",
+                    publicId: "menu/1783830337368-241eeaf5-9cb1-4429-9860-f635f11e033a",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830342/menu/1783830337368-241eeaf5-9cb1-4429-9860-f635f11e033a.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Cheese", price: 25, description: "Cheese slice" },
@@ -227,6 +229,8 @@ export class SeedService {
                     price: 179,
                     menuType: "Veg",
                     description: "Grilled paneer burger.",
+                    publicId: "menu/1783830509485-d85188fe-a8ae-498a-a1bf-7d20f59aad04",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830512/menu/1783830509485-d85188fe-a8ae-498a-a1bf-7d20f59aad04.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Cheese", price: 25, description: "Cheese slice" },
@@ -239,6 +243,8 @@ export class SeedService {
                     price: 219,
                     menuType: "NonVeg",
                     description: "Juicy grilled chicken burger.",
+                    publicId: "menu/1783830587213-9bd56d31-caab-440e-8778-623ff89b508b",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830588/menu/1783830587213-9bd56d31-caab-440e-8778-623ff89b508b.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Chicken", price: 70, description: "Chicken fillet" },
@@ -253,6 +259,8 @@ export class SeedService {
                     price: 249,
                     menuType: "Veg",
                     description: "Classic cheese pizza.",
+                    publicId: "menu/1783830702581-2d16bb72-e9f4-4456-9048-01f5a7c7c71c",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830708/menu/1783830702581-2d16bb72-e9f4-4456-9048-01f5a7c7c71c.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Cheese", price: 40, description: "Mozzarella" },
@@ -266,6 +274,8 @@ export class SeedService {
                     price: 329,
                     menuType: "Veg",
                     description: "Loaded with vegetables.",
+                    publicId: "menu/1783830794841-91303c67-8fce-43e1-a318-dddf50010036",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830798/menu/1783830794841-91303c67-8fce-43e1-a318-dddf50010036.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Cheese", price: 40, description: "Cheese" },
@@ -278,6 +288,8 @@ export class SeedService {
                     price: 399,
                     menuType: "NonVeg",
                     description: "Chicken pepperoni pizza.",
+                    publicId: "menu/1783830894059-15eb42d2-b9d7-408f-9414-4f342082d9bc",
+                    imageUrl: "https://res.cloudinary.com/djrclalf9/image/upload/v1783830917/menu/1783830894059-15eb42d2-b9d7-408f-9414-4f342082d9bc.jpg",
                     available: true,
                     submenu: [
                         { name: "Extra Pepperoni", price: 70, description: "Pepperoni" },
@@ -607,26 +619,46 @@ export class SeedService {
                             menuType: menu.menuType,
                             description: menu.description,
                             available: menu.available,
+                            publicId: menu.publicId,
+                            imageUrl: menu.imageUrl,
                         },
                     });
                 }
 
                 for (const sub of menu.submenu) {
-                    const exists = await this.prisma.subMenuItem.findFirst({
+                    // Find or create a standalone SubMenuItem by name
+                    let subMenuItem = await this.prisma.subMenuItem.findFirst({
                         where: {
-                            menuId: menuItem.id,
                             name: sub.name,
+                            deletedAt: null,
                         },
                     });
 
-                    if (!exists) {
-                        await this.prisma.subMenuItem.create({
+                    if (!subMenuItem) {
+                        subMenuItem = await this.prisma.subMenuItem.create({
                             data: {
-                                menuId: menuItem.id,
                                 name: sub.name,
                                 price: sub.price,
                                 available: true,
                                 description: sub.description,
+                            },
+                        });
+                    }
+
+                    // Link the SubMenuItem to the MenuItem via MenuSubMenu junction
+                    const linkExists = await this.prisma.menuSubMenu.findFirst({
+                        where: {
+                            menuItemId: menuItem.id,
+                            subMenuItemId: subMenuItem.id,
+                            deletedAt: null,
+                        },
+                    });
+
+                    if (!linkExists) {
+                        await this.prisma.menuSubMenu.create({
+                            data: {
+                                menuItemId: menuItem.id,
+                                subMenuItemId: subMenuItem.id,
                             },
                         });
                     }

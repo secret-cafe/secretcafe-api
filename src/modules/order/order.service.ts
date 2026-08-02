@@ -211,8 +211,21 @@ export class OrderService {
             // 2. Update all items to the new status
             await this.prisma.orderItem.updateMany({
                 where: { orderId: dto.orderId, isCancelled: false },
-                data: { status: dto.status },
+                data: { status: dto.status, isCancelled: dto.status == OrderStatus.CANCELLED },
             });
+
+            // 2b. If cancelling, also cancel all related sub-menu items
+            if (dto.status == OrderStatus.CANCELLED) {
+                await this.prisma.orderSubMenuItem.updateMany({
+                    where: {
+                        orderItem: {
+                            orderId: dto.orderId,
+                            isCancelled: true,
+                        },
+                    },
+                    data: { isCancelled: true },
+                });
+            }
 
             // 3. Log each item's transition (skip items already at target status)
             for (const item of currentItems) {
@@ -226,7 +239,19 @@ export class OrderService {
                 }
             }
 
-            // 4. Sync order-level status from items
+            // 4. Recalculate subtotal/totalAmount (cancelled items excluded)
+            await this.prisma.$transaction(async (tx) => {
+                const recalculatedSubtotal = await this.itemService.recalculateSubtotal(tx, dto.orderId);
+                await tx.order.update({
+                    where: { id: dto.orderId },
+                    data: {
+                        subtotal: recalculatedSubtotal,
+                        totalAmount: recalculatedSubtotal,
+                    },
+                });
+            });
+
+            // 5. Sync order-level status from items
             await this.syncOrderStatus(dto.orderId);
         } else {
             // Only update the order-level status directly
@@ -312,6 +337,18 @@ export class OrderService {
                 },
             });
         }
+
+        // Recalculate subtotal/totalAmount (cancelled items excluded)
+        await this.prisma.$transaction(async (tx) => {
+            const recalculatedSubtotal = await this.itemService.recalculateSubtotal(tx, orderItem!.orderId);
+            await tx.order.update({
+                where: { id: orderItem!.orderId },
+                data: {
+                    subtotal: recalculatedSubtotal,
+                    totalAmount: recalculatedSubtotal,
+                },
+            });
+        });
 
         await this.syncOrderStatus(orderItem!.orderId);
 

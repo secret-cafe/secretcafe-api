@@ -246,10 +246,14 @@ export class OrderItemService {
         const menuMap = await this.validation.resolveMenuItems([incoming.menuItemId]);
         const menu = menuMap.get(incoming.menuItemId)!;
 
+        // Resolve sub-menu item prices correctly (not an empty map)
+        const allSubIds = (incoming.orderSubMenuItems || []).map((s) => s.subMenuItemId);
+        const subMap = await this.validation.resolveSubMenuItems(allSubIds);
+
         const itemTotal = menu.price.mul(incoming.quantity);
         const orderSubMenuItemsData = this.buildSubMenuData(
             incoming.orderSubMenuItems ?? [],
-            new Map(),
+            subMap,
             new Prisma.Decimal(0),
         );
 

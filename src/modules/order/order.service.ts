@@ -297,9 +297,21 @@ export class OrderService {
                 id: orderItemId,
             },
             data: {
-                status,
+                status: dto.status,
+                isCancelled: dto.status == OrderStatus.CANCELLED,
             },
         });
+
+        if (dto.status == OrderStatus.CANCELLED) {
+            await this.prisma.orderSubMenuItem.updateMany({
+                where: {
+                    orderItemId: orderItemId,
+                },
+                data: {
+                    isCancelled: dto.status == OrderStatus.CANCELLED,
+                },
+            });
+        }
 
         await this.syncOrderStatus(orderItem!.orderId);
 

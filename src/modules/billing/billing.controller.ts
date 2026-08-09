@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
 import { Role } from 'src/common/constants/constants';
@@ -16,10 +24,7 @@ export class BillingController {
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Post('generate')
-  public generateBill(
-    @Body() dto: GenerateBillDto,
-    @Req() req: Request,
-  ) {
+  public generateBill(@Body() dto: GenerateBillDto, @Req() req: Request) {
     const userId = (req as any).user?.sub;
     return this.billingService.generateBill(dto, userId);
   }
@@ -39,9 +44,7 @@ export class BillingController {
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Get('table/:tableId')
-  public getBillByTable(
-    @Param('tableId', ParseIntPipe) tableId: number,
-  ) {
+  public getBillByTable(@Param('tableId', ParseIntPipe) tableId: number) {
     return this.billingService.getBillByTable(tableId);
   }
 

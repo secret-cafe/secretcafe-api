@@ -1,10 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import {
+  throwBadRequestException,
+  throwNotFoundException,
+} from 'src/common/utils/http-exception.helper';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
-import { Prisma, SessionStatus, PaymentStatus, OrderStatus, TableType, PaymentMethod } from 'generated/prisma/client';
+import {
+  Prisma,
+  SessionStatus,
+  PaymentStatus,
+  OrderStatus,
+  TableType,
+  PaymentMethod,
+  DiscountType,
+} from 'generated/prisma/client';
 import { OrderStatusHistoryService } from '../order/order-status-history.service';
 import { TableService } from '../table/table.service';
+import { calculateDiscounts } from './discount-calculator';
 
 @Injectable()
 export class BillingService {
@@ -12,7 +24,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly history: OrderStatusHistoryService,
     private readonly tableService: TableService,
-  ) { }
+  ) {}
 
   /**
    * Generates a bill for a table.
@@ -26,14 +38,21 @@ export class BillingService {
    * @param userId - The ID of the user generating the bill (optional).
    */
   public async generateBill(dto: GenerateBillDto, userId?: number) {
-    const { tableId, mobileNumber, notes } = dto;
+    const { tableId, mobileNumber, notes, discounts: requestedDiscounts } = dto;
 
     // 1. Find active session for this table
     const session = await this.prisma.tableSession.findFirst({
       where: { tableId, status: SessionStatus.ACTIVE },
       include: {
         table: {
-          select: { id: true, name: true, type: true, enableTimeRate: true, ratePerMinute: true, chargePerPerson: true },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            enableTimeRate: true,
+            ratePerMinute: true,
+            chargePerPerson: true,
+          },
         },
       },
     });
@@ -44,7 +63,8 @@ export class BillingService {
     }
 
     const tableType = session.table.type;
-    const isTimeRateTable = tableType === TableType.POD || tableType === TableType.HALL;
+    const isTimeRateTable =
+      tableType === TableType.POD || tableType === TableType.HALL;
 
     // 2. Check for existing unpaid bill for this session
     const existingBill = await this.prisma.billing.findFirst({
@@ -81,22 +101,36 @@ export class BillingService {
     if (tableType === TableType.FAMILY) {
       // FAMILY tables MUST have an order with served items
       if (!order) {
-        throwBadRequestException('No active order found for this FAMILY table. An order is required for billing.');
+        throwBadRequestException(
+          'No active order found for this FAMILY table. An order is required for billing.',
+        );
         return;
       }
 
-      const nonServedItems = order.items.filter((item) => item.status !== OrderStatus.SERVED);
+      const nonServedItems = order.items.filter(
+        (item) => item.status !== OrderStatus.SERVED,
+      );
       if (nonServedItems.length > 0) {
-        const names = nonServedItems.map((i) => `Item #${i.id} (status: ${i.status})`).join(', ');
-        throwBadRequestException(`All items must be served first. Pending: ${names}`);
+        const names = nonServedItems
+          .map((i) => `Item #${i.id} (status: ${i.status})`)
+          .join(', ');
+        throwBadRequestException(
+          `All items must be served first. Pending: ${names}`,
+        );
         return;
       }
     } else if (isTimeRateTable && order) {
       // POD/HALL: if an order exists, validate items are served
-      const nonServedItems = order.items.filter((item) => item.status !== OrderStatus.SERVED);
+      const nonServedItems = order.items.filter(
+        (item) => item.status !== OrderStatus.SERVED,
+      );
       if (nonServedItems.length > 0) {
-        const names = nonServedItems.map((i) => `Item #${i.id} (status: ${i.status})`).join(', ');
-        throwBadRequestException(`All items must be served first. Pending: ${names}`);
+        const names = nonServedItems
+          .map((i) => `Item #${i.id} (status: ${i.status})`)
+          .join(', ');
+        throwBadRequestException(
+          `All items must be served first. Pending: ${names}`,
+        );
         return;
       }
     }
@@ -115,57 +149,134 @@ export class BillingService {
     // 6. Calculate time charge (POD / HALL with time rate enabled)
     //    Skip time-based and per-person charges when rushMode is active.
     let timeChargeAmount: Prisma.Decimal | null = null;
-    let totalMinutes: number | null = null;
 
     if (!session.rushMode && isTimeRateTable && session.enableTimeRate) {
       const startTime = session.timerStartedAt ?? session.startedAt;
       if (!startTime) {
-        throwBadRequestException('Timer not started for this session. Cannot calculate time charge.');
+        throwBadRequestException(
+          'Timer not started for this session. Cannot calculate time charge.',
+        );
         return;
       }
       const end = new Date();
-      const elapsedMinutes = Math.ceil((end.getTime() - startTime.getTime()) / (1000 * 60));
+      const elapsedMinutes = Math.ceil(
+        (end.getTime() - startTime.getTime()) / (1000 * 60),
+      );
       const multiplier = session.chargePerPerson ? session.guestCount : 1;
-
-      totalMinutes = elapsedMinutes;
 
       // HALL tables: use ratePerHour if available
       if (session.ratePerHour) {
         const elapsedHours = elapsedMinutes / 60;
-        timeChargeAmount = new Prisma.Decimal(Number(session.ratePerHour) * elapsedHours * multiplier);
+        timeChargeAmount = new Prisma.Decimal(
+          Number(session.ratePerHour) * elapsedHours * multiplier,
+        );
       } else if (session.ratePerMinute) {
         // POD / default: use ratePerMinute
-        timeChargeAmount = new Prisma.Decimal(Number(session.ratePerMinute) * elapsedMinutes * multiplier);
+        timeChargeAmount = new Prisma.Decimal(
+          Number(session.ratePerMinute) * elapsedMinutes * multiplier,
+        );
       }
     }
 
-    // 7. Total
-    const totalAmount = itemSubtotal.add(timeChargeAmount ?? new Prisma.Decimal(0));
+    // 7. Apply discounts against the item subtotal only (if any requested)
+    let discountAmount = new Prisma.Decimal(0);
+    let appliedDiscounts: {
+      discountId: number;
+      type: DiscountType;
+      value: Prisma.Decimal;
+      discountAmount: Prisma.Decimal;
+      sequence: number;
+    }[] = [];
+
+    if (requestedDiscounts && requestedDiscounts.length > 0) {
+      const discountIds = requestedDiscounts.map((d) => d.discountId);
+
+      // Fetch only active, non-deleted discounts. Never trust values from the frontend.
+      const fetchedDiscounts = await this.prisma.discount.findMany({
+        where: {
+          id: { in: discountIds },
+          deletedAt: null,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          type: true,
+          value: true,
+        },
+      });
+
+      if (fetchedDiscounts.length !== discountIds.length) {
+        throwBadRequestException(
+          'One or more discounts are invalid, inactive, or deleted.',
+        );
+        return;
+      }
+
+      const discountMap = new Map(fetchedDiscounts.map((d) => [d.id, d]));
+
+      const calculation = calculateDiscounts(
+        itemSubtotal,
+        requestedDiscounts.map((d) => {
+          const discount = discountMap.get(d.discountId)!;
+          return {
+            discountId: discount.id,
+            type: discount.type,
+            value: discount.value,
+            sequence: d.sequence,
+          };
+        }),
+      );
+
+      discountAmount = calculation.totalDiscount;
+      appliedDiscounts = calculation.discounts;
+    }
+
+    // 8. Total (discount applies to item subtotal only; time charge is undiscounted)
+    const totalAmount = itemSubtotal
+      .sub(discountAmount)
+      .add(timeChargeAmount ?? new Prisma.Decimal(0));
 
     if (totalAmount.isZero()) {
-      throwBadRequestException('Cannot generate bill with zero total. No charges to bill.');
+      throwBadRequestException(
+        'Cannot generate bill with zero total. No charges to bill.',
+      );
       return;
     }
 
-    // 8. Generate bill number
+    // 9. Generate bill number
     const billNumber = await this.generateBillNumber();
 
-    // 9. Create billing record within a transaction
+    // 10. Create billing record + discount snapshots within a transaction
     await this.prisma.$transaction(async (tx) => {
-      await tx.billing.create({
+      const billing = await tx.billing.create({
         data: {
           sessionId: session.id,
           orderId: order?.id ?? null,
           billNumber,
           subtotal: itemSubtotal,
           timeChargeAmount,
+          discountAmount,
           totalAmount,
           paymentStatus: PaymentStatus.UNPAID,
           mobileNumber: mobileNumber || null,
           notes: notes || null,
           createdBy: userId || null,
-        }
+        },
       });
+
+      // Persist historical discount snapshots
+      if (appliedDiscounts.length > 0) {
+        await tx.billingDiscount.createMany({
+          data: appliedDiscounts.map((d) => ({
+            billingId: billing.id,
+            discountId: d.discountId,
+            discountType: d.type,
+            discountValue: d.value,
+            discountAmount: d.discountAmount,
+            sequence: d.sequence,
+          })),
+        });
+      }
 
       // Update the order's payment status if an order exists
       if (order) {
@@ -178,7 +289,7 @@ export class BillingService {
 
     return {
       status: true,
-      message: 'Bill generated successfully.'
+      message: 'Bill generated successfully.',
     };
   }
 
@@ -223,14 +334,18 @@ export class BillingService {
     // Validate CASH_ONLINE split amounts
     if (paymentMethod === PaymentMethod.CASH_ONLINE) {
       if (cashAmount === undefined || onlineAmount === undefined) {
-        throwBadRequestException('cashAmount and onlineAmount are required for CASH_ONLINE payment.');
+        throwBadRequestException(
+          'cashAmount and onlineAmount are required for CASH_ONLINE payment.',
+        );
         return;
       }
 
-      const totalSplit = new Prisma.Decimal(cashAmount).add(new Prisma.Decimal(onlineAmount));
+      const totalSplit = new Prisma.Decimal(cashAmount).add(
+        new Prisma.Decimal(onlineAmount),
+      );
       if (!totalSplit.equals(billing.totalAmount)) {
         throwBadRequestException(
-          `Cash (${cashAmount}) + Online (${onlineAmount}) = ${totalSplit} does not match bill total (${billing.totalAmount}).`,
+          `Cash (${cashAmount}) + Online (${onlineAmount}) = ${totalSplit.toString()} does not match bill total (${billing.totalAmount.toString()}).`,
         );
         return;
       }
@@ -292,7 +407,7 @@ export class BillingService {
 
     return {
       status: true,
-      message: 'Payment recorded successfully.'
+      message: 'Payment recorded successfully.',
     };
   }
 
@@ -349,6 +464,14 @@ export class BillingService {
             },
           },
         },
+        billingDiscounts: {
+          orderBy: { sequence: 'asc' },
+          include: {
+            discount: {
+              select: { id: true, name: true },
+            },
+          },
+        },
       },
     });
 
@@ -399,7 +522,7 @@ export class BillingService {
                 notes: true,
                 isCancelled: true,
                 menuItem: {
-                  select: { 
+                  select: {
                     name: true,
                   },
                 },
@@ -417,6 +540,14 @@ export class BillingService {
                   },
                 },
               },
+            },
+          },
+        },
+        billingDiscounts: {
+          orderBy: { sequence: 'asc' },
+          include: {
+            discount: {
+              select: { id: true, name: true },
             },
           },
         },
@@ -439,7 +570,11 @@ export class BillingService {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
 
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startOfDay = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
     const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
     const count = await this.prisma.billing.count({
@@ -475,40 +610,51 @@ export class BillingService {
       mobileNumber: billing.mobileNumber,
       notes: billing.notes,
       createdAt: billing.createdAt,
+      totalDiscount: billing.discountAmount,
+      discounts: billing.billingDiscounts
+        ? billing.billingDiscounts.map((d: any) => ({
+            discountId: d.discountId,
+            discountName: d.discount?.name,
+            discountType: d.discountType,
+            discountValue: d.discountValue,
+            discountAmount: d.discountAmount,
+            sequence: d.sequence,
+          }))
+        : [],
       session: billing.session
         ? {
-          tableSessionId: billing.session.id,
-          tableId: billing.session.tableId,
-          tableName: billing.session.table?.name,
-          tableType: billing.session.table?.type,
-          guestCount: billing.session.guestCount,
-        }
+            tableSessionId: billing.session.id,
+            tableId: billing.session.tableId,
+            tableName: billing.session.table?.name,
+            tableType: billing.session.table?.type,
+            guestCount: billing.session.guestCount,
+          }
         : null,
       order: billing.order
         ? {
-          orderId: billing.order.id,
-          orderNumber: billing.order.orderNumber,
-          items: billing.order.items
-            ? billing.order.items.map((item: any) => ({
-              orderItemId: item.id,
-              menuItemName: item.menuItem?.name,
-              unitPrice: item.unitPrice,
-              totalPrice: item.totalPrice,
-              quantity: item.quantity,
-              notes: item.notes,
-              isCancelled: item.isCancelled,
-              subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
-                orderSubMenuItemId: sub.id,
-                subMenuItemName: sub.subMenuItem?.name,
-                unitPrice: sub.unitPrice,
-                totalPrice: sub.totalPrice,
-                quantity: sub.quantity,
-                isCancelled: sub.isCancelled,
-                notes: sub.notes,
-              })),
-            }))
-            : [],
-        }
+            orderId: billing.order.id,
+            orderNumber: billing.order.orderNumber,
+            items: billing.order.items
+              ? billing.order.items.map((item: any) => ({
+                  orderItemId: item.id,
+                  menuItemName: item.menuItem?.name,
+                  unitPrice: item.unitPrice,
+                  totalPrice: item.totalPrice,
+                  quantity: item.quantity,
+                  notes: item.notes,
+                  isCancelled: item.isCancelled,
+                  subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
+                    orderSubMenuItemId: sub.id,
+                    subMenuItemName: sub.subMenuItem?.name,
+                    unitPrice: sub.unitPrice,
+                    totalPrice: sub.totalPrice,
+                    quantity: sub.quantity,
+                    isCancelled: sub.isCancelled,
+                    notes: sub.notes,
+                  })),
+                }))
+              : [],
+          }
         : null,
     };
   }

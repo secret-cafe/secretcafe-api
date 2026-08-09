@@ -1,5 +1,20 @@
-import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayUnique, IsArray, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf, ValidateNested} from 'class-validator';
 import { PaymentMethod } from 'generated/prisma/client';
+
+/** A single discount applied to a bill, with its application order. */
+export class ApplyDiscountDto {
+  /** The ID of the discount master record. */
+  @IsNotEmpty()
+  @IsInt()
+  discountId!: number;
+
+  /** The order in which this discount is applied (1-based). */
+  @IsNotEmpty()
+  @IsInt()
+  @Min(1)
+  sequence!: number;
+}
 
 /** DTO for generating a bill for a table. */
 export class GenerateBillDto {
@@ -18,6 +33,14 @@ export class GenerateBillDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Optional discounts to apply to the item subtotal. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApplyDiscountDto)
+  @ArrayUnique((o: ApplyDiscountDto) => o.discountId)
+  discounts?: ApplyDiscountDto[];
 }
 
 /** DTO for marking a bill as paid. */

@@ -63,6 +63,11 @@ enum PaymentMethod {
   CASH_ONLINE
 }
 
+enum DiscountType {
+  PERCENTAGE
+  AMOUNT
+}
+
 model UserInfo {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
   roleId      Int?      @db.UnsignedInt
@@ -364,9 +369,47 @@ model Billing {
   updatedAt         DateTime       @updatedAt
 
   // Relations
-  session TableSession @relation(fields: [sessionId], references: [id])
-  order   Order?       @relation(fields: [orderId], references: [id])
+  session          TableSession      @relation(fields: [sessionId], references: [id])
+  order            Order?            @relation(fields: [orderId], references: [id])
+  billingDiscounts BillingDiscount[]
 
   @@index([sessionId])
   @@index([paymentStatus])
+}
+
+model Discount {
+  id          Int          @id @default(autoincrement()) @db.UnsignedInt
+  name        String       @db.VarChar(255)
+  description String?      @db.VarChar(5000)
+  type        DiscountType
+  value       Decimal      @db.Decimal(10, 2)
+  isActive    Boolean      @default(true)
+  createdBy   Int?         @db.UnsignedInt
+  updatedBy   Int?         @db.UnsignedInt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  billingDiscounts BillingDiscount[]
+
+  @@index([deletedAt])
+}
+
+model BillingDiscount {
+  id             Int          @id @default(autoincrement()) @db.UnsignedInt
+  billingId      Int          @db.UnsignedInt
+  discountId     Int          @db.UnsignedInt
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(10, 2)
+  discountAmount Decimal      @db.Decimal(10, 2)
+  sequence       Int          @default(1)
+  createdAt      DateTime     @default(now())
+
+  // Relations
+  billing  Billing  @relation(fields: [billingId], references: [id], onDelete: Cascade)
+  discount Discount @relation(fields: [discountId], references: [id])
+
+  @@index([billingId])
+  @@index([discountId])
 }

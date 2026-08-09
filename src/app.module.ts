@@ -10,6 +10,7 @@ import { CloudinaryModule } from './common/upload/cloudinary/cloudinary.module';
 import { TableModule } from './modules/table/table.module';
 import { OrderModule } from './modules/order/order.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { DiscountModule } from './modules/discount/discount.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { SubmenuModule } from './modules/submenu/submenu.module';
 
@@ -29,8 +30,8 @@ import { SubmenuModule } from './modules/submenu/submenu.module';
     TableModule,
     OrderModule,
     BillingModule,
+    DiscountModule,
     SubmenuModule,
   ],
 })
-
 export class AppModule {}

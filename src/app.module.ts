@@ -11,6 +11,7 @@ import { TableModule } from './modules/table/table.module';
 import { OrderModule } from './modules/order/order.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { DiscountModule } from './modules/discount/discount.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { SubmenuModule } from './modules/submenu/submenu.module';
 
@@ -32,6 +33,7 @@ import { SubmenuModule } from './modules/submenu/submenu.module';
     BillingModule,
     DiscountModule,
     SubmenuModule,
+    InventoryModule,
   ],
 })
 export class AppModule {}

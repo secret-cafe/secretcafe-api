@@ -413,3 +413,22 @@ model BillingDiscount {
   @@index([billingId])
   @@index([discountId])
 }
+
+model InventoryItem {
+  id                Int       @id @default(autoincrement()) @db.UnsignedInt
+  inventoryId       String    @unique @db.VarChar(36)
+  name              String    @db.VarChar(255)
+  sku               String    @unique @db.VarChar(100)
+  unit              String    @db.VarChar(50)
+  quantity          Decimal   @default(0) @db.Decimal(10, 2)
+  lowStockThreshold Decimal   @default(0) @db.Decimal(10, 2)
+  isActive          Boolean   @default(true)
+  createdBy         Int?      @db.UnsignedInt
+  updatedBy         Int?      @db.UnsignedInt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  @@index([deletedAt])
+  @@index([inventoryId])
+}

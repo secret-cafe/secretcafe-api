@@ -14,6 +14,7 @@ import { DiscountModule } from './modules/discount/discount.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { SubmenuModule } from './modules/submenu/submenu.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SubmenuModule } from './modules/submenu/submenu.module';
     DiscountModule,
     SubmenuModule,
     InventoryModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

@@ -32,7 +32,6 @@ export class CreateInventoryDto {
   lowStockThreshold!: number;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
   @IsBoolean()
   isActive?: boolean;
 }

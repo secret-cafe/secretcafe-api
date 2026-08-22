@@ -24,7 +24,7 @@ type InventoryItemRaw = {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private readonly inventorySelect = {
     inventoryId: true,
@@ -171,22 +171,17 @@ export class InventoryService {
     }
 
     try {
+      const updateData: any = {
+        ...data,
+        updatedBy: userId ?? null,
+      };
+
       await this.prisma.inventoryItem.updateMany({
         where: {
           inventoryId,
           deletedAt: null,
         },
-        data: {
-          ...(data.name !== undefined && { name: data.name }),
-          ...(data.sku !== undefined && { sku: data.sku }),
-          ...(data.unit !== undefined && { unit: data.unit }),
-          ...(data.quantity !== undefined && { quantity: data.quantity }),
-          ...(data.lowStockThreshold !== undefined && {
-            lowStockThreshold: data.lowStockThreshold,
-          }),
-          ...(data.isActive !== undefined && { isActive: data.isActive }),
-          updatedBy: userId ?? null,
-        },
+        data: updateData,
       });
 
       return {

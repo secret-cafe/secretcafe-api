@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsNotEmpty()
@@ -29,5 +29,6 @@ export class CreateUserDto {
   phoneNumber?: string;
 
   @IsNotEmpty()
-  roleId?: number;
+  @IsString()
+  roleId!: string;
 }

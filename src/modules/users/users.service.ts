@@ -1,9 +1,24 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from 'generated/prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { QueryUserDto } from './dto/query-user.dto';
 import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import * as bcrypt from 'bcrypt';
+
+type UserRaw = {
+  userId: string;
+  name: string;
+  username: string;
+  email: string;
+  phoneNumber: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  role: { roleId: string; name: string } | null;
+};
 
 @Injectable()
 export class UserService {
@@ -11,53 +26,94 @@ export class UserService {
   constructor(private prisma: PrismaService) { }
 
   private readonly userSelect = {
-    id: true,
+    userId: true,
     name: true,
     username: true,
     email: true,
     phoneNumber: true,
-    createdAt: true,
     isActive: true,
+    createdAt: true,
+    updatedAt: true,
     role: {
       select: {
-        id: true,
+        roleId: true,
         name: true,
       },
     },
-  };
+  } satisfies Prisma.UserInfoSelect;
 
-  private async findUserOrThrow(id: number) {
+  private async findUserOrThrow(userId: string) {
     const user = await this.prisma.userInfo.findFirst({
       where: {
-        id,
+        userId,
         deletedAt: null,
       },
       select: this.userSelect,
     });
 
     if (!user) throwNotFoundException('User not found');
-    return user;
+    return user!;
+  }
+
+  private async resolveRoleOrThrow(roleId: string) {
+    const role = await this.prisma.roles.findFirst({
+      where: {
+        roleId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!role) throwNotFoundException('Role not found');
+    return role!;
   }
 
   private async hashPassword(password: string) {
     return await bcrypt.hash(password, 10);
   }
 
-  async findAll() {
-    const users = await this.prisma.userInfo.findMany({
-      where: { deletedAt: null },
-      select: this.userSelect,
-    });
+  async findAll(query: QueryUserDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserInfoWhereInput = {
+      deletedAt: null,
+      ...(query.search && {
+        OR: [
+          { name: { contains: query.search } },
+          { username: { contains: query.search } },
+          { email: { contains: query.search } },
+        ],
+      }),
+    };
+
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.userInfo.findMany({
+        where,
+        select: this.userSelect,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.userInfo.count({ where }),
+    ]);
 
     return {
       status: true,
       message: 'Users fetched successfully',
       data: users,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
-  async findOne(id: number) {
-    const user = await this.findUserOrThrow(id);
+  async findOne(userId: string) {
+    const user = await this.findUserOrThrow(userId);
 
     return {
       status: true,
@@ -66,13 +122,22 @@ export class UserService {
     };
   }
 
-  async create(data: CreateUserDto) {
+  async create(data: CreateUserDto, createdById?: number) {
+    const role = await this.resolveRoleOrThrow(data.roleId);
+
     try {
       const hashedPassword = await this.hashPassword(data.password);
       await this.prisma.userInfo.create({
         data: {
-          ...data,
+          userId: randomUUID(),
+          name: data.name,
+          username: data.username,
+          email: data.email,
           password: hashedPassword,
+          phoneNumber: data.phoneNumber ?? null,
+          isActive: data.isActive ?? true,
+          roleId: role.id,
+          createdBy: createdById ?? null,
         },
       });
 
@@ -89,17 +154,33 @@ export class UserService {
     }
   }
 
-  async update(id: number, data: UpdateUserDto) {
-    await this.findUserOrThrow(id);
+  async update(userId: string, data: UpdateUserDto, updatedById?: number) {
+    await this.findUserOrThrow(userId);
+
+    let roleId: number | undefined;
+    if (data.roleId) {
+      const role = await this.resolveRoleOrThrow(data.roleId);
+      roleId = role.id;
+    }
 
     try {
+      let password: string | undefined;
       if (data.password) {
-        data.password = await this.hashPassword(data.password);
+        password = await this.hashPassword(data.password);
       }
 
-      await this.prisma.userInfo.update({
-        where: { id },
-        data,
+      const updateData: any = {
+        ...data,
+        ...(data.password !== undefined && { password }),
+        updatedBy: updatedById ?? null,
+      };
+
+      await this.prisma.userInfo.updateMany({
+        where: {
+          userId,
+          deletedAt: null,
+        },
+        data: updateData,
       });
 
       return {
@@ -115,15 +196,19 @@ export class UserService {
     }
   }
 
-  async delete(id: number) {
-    await this.findUserOrThrow(id);
+  async delete(userId: string, updatedById?: number) {
+    await this.findUserOrThrow(userId);
 
     try {
-      await this.prisma.userInfo.update({
-        where: { id },
+      await this.prisma.userInfo.updateMany({
+        where: {
+          userId,
+          deletedAt: null,
+        },
         data: {
           deletedAt: new Date(),
           isActive: false,
+          updatedBy: updatedById ?? null,
         },
       });
 

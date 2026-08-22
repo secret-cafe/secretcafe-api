@@ -70,6 +70,7 @@ enum DiscountType {
 
 model UserInfo {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  userId      String?    @unique @db.VarChar(36)
   roleId      Int?      @db.UnsignedInt
   name        String
   username    String
@@ -85,11 +86,13 @@ model UserInfo {
   role        Roles?    @relation(fields: [roleId], references: [id])
 
   @@index([deletedAt])
+  @@index([userId])
   @@index([roleId], map: "UserInfo_roleId_fkey")
 }
 
 model Roles {
   id          Int        @id @default(autoincrement()) @db.UnsignedInt
+  roleId      String?     @unique @db.VarChar(36)
   name        String     @unique
   description String?    @db.VarChar(255)
   isActive    Boolean    @default(true)
@@ -101,6 +104,7 @@ model Roles {
   users       UserInfo[]
 
   @@index([deletedAt])
+  @@index([roleId])
 }
 
 model Category {

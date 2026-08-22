@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { TableType } from 'generated/prisma/enums';
 
 @Injectable()
@@ -25,7 +26,10 @@ export class SeedService {
                     update: {
                         description: role.description,
                     },
-                    create: role,
+                    create: {
+                        ...role,
+                        roleId: randomUUID(),
+                    },
                 });
             }
 
@@ -86,6 +90,7 @@ export class SeedService {
                 await this.prisma.userInfo.create({
                     data: {
                         ...userData,
+                        userId: randomUUID(),
                         roleId: role.id,
                     },
                 });

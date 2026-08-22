@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards, Request, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, Query } from '@nestjs/common';
 import { UserService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { QueryUserDto } from './dto/query-user.dto';
 import { Role } from 'src/common/constants/constants';
 import { Auth } from 'src/common/decorators/auth.decorator';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('users')
 @Auth(Role.SUPER_ADMIN, Role.ADMIN)
@@ -11,13 +13,16 @@ export class UserController {
     constructor(private readonly userService: UserService) { }
 
     @Post()
-    createUser(@Body() createUserDto: CreateUserDto) {
-        return this.userService.create(createUserDto);
+    createUser(
+        @Body() createUserDto: CreateUserDto,
+        @CurrentUser('sub') userId?: number,
+    ) {
+        return this.userService.create(createUserDto, userId);
     }
 
     @Get()
-    getAllUsers() {
-        return this.userService.findAll();
+    getAllUsers(@Query() query: QueryUserDto) {
+        return this.userService.findAll(query);
     }
 
     @Get('profile')
@@ -26,21 +31,25 @@ export class UserController {
         return this.userService.findOne(req.user.userId);
     }
 
-    @Get(':id')
-    getUserById(@Param('id', ParseIntPipe) userId: number) {
+    @Get(':userId')
+    getUserById(@Param('userId', ParseUUIDPipe) userId: string) {
         return this.userService.findOne(userId);
     }
 
-    @Patch(':id')
+    @Patch(':userId')
     updateUser(
-        @Param('id', ParseIntPipe) userId: number,
+        @Param('userId', ParseUUIDPipe) userId: string,
         @Body() updateUserDto: UpdateUserDto,
+        @CurrentUser('sub') updatedById?: number,
     ) {
-        return this.userService.update(userId, updateUserDto);
+        return this.userService.update(userId, updateUserDto, updatedById);
     }
 
-    @Delete(':id')
-    deleteUser(@Param('id', ParseIntPipe) userId: number) {
-        return this.userService.delete(userId);
+    @Delete(':userId')
+    deleteUser(
+        @Param('userId', ParseUUIDPipe) userId: string,
+        @CurrentUser('sub') updatedById?: number,
+    ) {
+        return this.userService.delete(userId, updatedById);
     }
 }

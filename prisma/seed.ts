@@ -1,4 +1,5 @@
 import { PrismaService } from "src/prisma/prisma.service";
+import { randomUUID } from "crypto";
 
 const prisma = new PrismaService();
 
@@ -18,6 +19,7 @@ async function main() {
       create: {
         name: role.name,
         description: role.description,
+        roleId: randomUUID(),
       },
     });
   }

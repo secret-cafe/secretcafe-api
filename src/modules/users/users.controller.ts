@@ -15,7 +15,7 @@ export class UserController {
     @Post()
     createUser(
         @Body() createUserDto: CreateUserDto,
-        @CurrentUser('sub') userId?: number,
+        @CurrentUser('userId') userId?: number,
     ) {
         return this.userService.create(createUserDto, userId);
     }
@@ -40,7 +40,7 @@ export class UserController {
     updateUser(
         @Param('userId', ParseUUIDPipe) userId: string,
         @Body() updateUserDto: UpdateUserDto,
-        @CurrentUser('sub') updatedById?: number,
+        @CurrentUser('userId') updatedById?: number,
     ) {
         return this.userService.update(userId, updateUserDto, updatedById);
     }
@@ -48,7 +48,7 @@ export class UserController {
     @Delete(':userId')
     deleteUser(
         @Param('userId', ParseUUIDPipe) userId: string,
-        @CurrentUser('sub') updatedById?: number,
+        @CurrentUser('userId') updatedById?: number,
     ) {
         return this.userService.delete(userId, updatedById);
     }

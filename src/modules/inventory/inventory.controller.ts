@@ -25,7 +25,7 @@ export class InventoryController {
   @Post()
   createInventory(
     @Body() createInventoryDto: CreateInventoryDto,
-    @CurrentUser('sub') userId?: number,
+    @CurrentUser('userId') userId?: number,
   ) {
     return this.inventoryService.create(createInventoryDto, userId);
   }
@@ -46,7 +46,7 @@ export class InventoryController {
   updateInventoryItem(
     @Param('inventoryId', ParseUUIDPipe) inventoryId: string,
     @Body() updateInventoryDto: UpdateInventoryDto,
-    @CurrentUser('sub') userId?: number,
+    @CurrentUser('userId') userId?: number,
   ) {
     return this.inventoryService.update(
       inventoryId,
@@ -58,7 +58,8 @@ export class InventoryController {
   @Delete(':inventoryId')
   deleteInventoryItem(
     @Param('inventoryId', ParseUUIDPipe) inventoryId: string,
+    @CurrentUser('userId') userId?: number,
   ) {
-    return this.inventoryService.delete(inventoryId);
+    return this.inventoryService.delete(inventoryId, userId);
   }
 }

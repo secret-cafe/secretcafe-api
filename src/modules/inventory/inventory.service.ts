@@ -197,7 +197,7 @@ export class InventoryService {
     }
   }
 
-  async delete(inventoryId: string) {
+  async delete(inventoryId: string, userId?: number) {
     await this.findInventoryOrThrow(inventoryId);
 
     try {
@@ -208,6 +208,7 @@ export class InventoryService {
         },
         data: {
           deletedAt: new Date(),
+          updatedBy: userId ?? null,
         },
       });
 

@@ -172,6 +172,7 @@ export class UserService {
       const updateData: any = {
         ...data,
         ...(data.password !== undefined && { password }),
+        ...(data.roleId !== undefined && { roleId }),
         updatedBy: updatedById ?? null,
       };
 

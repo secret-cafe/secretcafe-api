@@ -28,7 +28,7 @@ export class UserController {
     @Get('profile')
     @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
     getProfile(@Req() req: any) {
-        return this.userService.findOne(req.user.userId);
+        return this.userService.findOne(req.user.currentUserId);
     }
 
     @Get(':userId')

@@ -16,9 +16,8 @@ export class CreateMenuDto {
   menuType!: string;
 
   @IsNotEmpty()
-  @Type(() => Number)
-  @IsNumber()
-  categoryId!: number;
+  @IsString()
+  categoryId!: string;
 
   @IsOptional()
   @IsBoolean()

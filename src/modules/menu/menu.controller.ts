@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UploadedFile } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, UploadedFile } from '@nestjs/common';
 import { Role } from 'src/common/constants/constants';
 import { Auth } from 'src/common/decorators/auth.decorator';
 import { MenuService } from './menu.service';
@@ -29,8 +29,8 @@ export class MenuController {
     }
 
     @Get('category/:id')
-    getMenuByCategoryId(@Param('id', ParseIntPipe) menuId: number) {
-        return this.menuService.findByCategory(menuId);
+    getMenuByCategoryId(@Param('id', ParseUUIDPipe) categoryId: string) {
+        return this.menuService.findByCategory(categoryId);
     }
 
     @Patch(':id')

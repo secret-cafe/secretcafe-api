@@ -201,7 +201,10 @@ export class SeedService {
 
                 if (!record) {
                     record = await this.prisma.category.create({
-                        data: category,
+                        data: {
+                            ...category,
+                            categoryId: randomUUID(),
+                        },
                     });
                 }
 

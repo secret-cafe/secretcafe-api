@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { MenuService } from '../menu/menu.service';
 import { CategoryService } from '../category/category.service';
 import { TableService } from '../table/table.service';
+import { QueryCategoryDto } from '../category/dto/query-category.dto';
 import { TableSessionDto } from '../table/dto/table-session.dto';
 
 @Controller('customer')
@@ -13,8 +14,8 @@ export class CustomerController {
     ) { }
 
     @Get('categories')
-    getCategories() {
-        return this.categoryService.findAll();
+    getCategories(@Query() query: QueryCategoryDto) {
+        return this.categoryService.findAll(query);
     }
 
     @Get('menu')
@@ -24,7 +25,7 @@ export class CustomerController {
 
     @Get('menu/category/:id')
     getMenusByCategory(
-        @Param('id', ParseIntPipe) categoryId: number,
+        @Param('id', ParseUUIDPipe) categoryId: string,
     ) {
         return this.menuService.findByCategory(categoryId);
     }

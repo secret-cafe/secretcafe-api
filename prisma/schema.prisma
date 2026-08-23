@@ -109,6 +109,7 @@ model Roles {
 
 model Category {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  categoryId  String?   @unique @db.VarChar(36)
   name        String    @db.VarChar(255)
   description String?   @db.VarChar(5000)
   publicId    String?   @db.VarChar(255)
@@ -124,6 +125,7 @@ model Category {
   menuItems MenuItem[]
 
   @@index([deletedAt])
+  @@index([categoryId])
 }
 
 model MenuItem {

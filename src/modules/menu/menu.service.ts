@@ -18,7 +18,7 @@ export class MenuService {
     private readonly menuSelect = {
         category: {
             select: {
-                id: true,
+                categoryId: true,
                 name: true,
             },
         },
@@ -47,16 +47,43 @@ export class MenuService {
     };
 
     /**
+     * Keep the response key `id` but its value is the UUID `categoryId`.
+     * The internal numeric category auto-increment `id` is never exposed.
+     */
+    private mapCategory(category: any): any {
+        if (!category) return category;
+        const { categoryId, ...rest } = category;
+        return { ...rest, id: categoryId };
+    }
+
+    /**
+     * Resolve a public category UUID into the internal numeric category id.
+     */
+    private async resolveCategoryIdOrThrow(categoryId: string): Promise<number> {
+        const category = await this.prisma.category.findFirst({
+            where: {
+                categoryId,
+                deletedAt: null,
+            },
+            select: { id: true },
+        });
+
+        if (!category) throwNotFoundException('Category not found');
+        return category!.id;
+    }
+
+    /**
      * Transforms a raw menu item (with menuSubMenus) into the legacy
      * API response format with `subMenuItems` array.
      */
     private transformToLegacyFormat(menu: any): any {
         if (!menu) return menu;
 
-        const { menuSubMenus, ...rest } = menu;
+        const { menuSubMenus, category, ...rest } = menu;
 
         return {
             ...rest,
+            category: category ? this.mapCategory(category) : null,
             subMenuItems: menuSubMenus
                 ?.filter((msm: any) => msm.subMenuItem)
                 .map((msm: any) => msm.subMenuItem) ?? [],
@@ -78,7 +105,7 @@ export class MenuService {
                 ...(includePublicId && { publicId: true }),
                 category: {
                     select: {
-                        id: true,
+                        categoryId: true,
                         name: true,
                     },
                 },
@@ -99,11 +126,13 @@ export class MenuService {
 
     async create(data: CreateMenuDto, file?: any) {
         try {
-            const { submenu, ...menuData } = data;
+            const { categoryId, submenu, ...menuData } = data;
+            const categoryInternalId = await this.resolveCategoryIdOrThrow(categoryId);
 
             await this.prisma.menuItem.create({
                 data: {
                     ...menuData,
+                    categoryId: categoryInternalId,
                     publicId: file?.filename ?? null,
                     imageUrl: file?.path ?? null,
                     ...(submenu && submenu.length > 0 && {
@@ -140,7 +169,7 @@ export class MenuService {
                 ...this.menuSelect,
                 category: {
                     select: {
-                        id: true,
+                        categoryId: true,
                         name: true,
                     },
                 },
@@ -164,15 +193,15 @@ export class MenuService {
         };
     }
 
-    async findByCategory(categoryId: number) {
+    async findByCategory(categoryId: string) {
         const categoryMenu = await this.prisma.category.findFirst({
             where: {
-                id: categoryId,
+                categoryId,
                 deletedAt: null,
                 isActive: true,
             },
             select: {
-                id: true,
+                categoryId: true,
                 name: true,
                 menuItems: {
                     where: {
@@ -188,11 +217,14 @@ export class MenuService {
             return categoryMenu;
         }
 
+        const { categoryId: cid, ...rest } = categoryMenu;
+
         return {
             status: true,
             message: 'Menu fetched successfully',
             data: {
-                ...categoryMenu,
+                ...rest,
+                id: cid,
                 menuItems: categoryMenu.menuItems.map((item) => this.transformToLegacyFormat(item)),
             },
         };
@@ -210,13 +242,14 @@ export class MenuService {
             updateData.imageUrl = file.path;
         }
 
-        const { submenu, ...menuData } = updateData;
+        const { submenu, categoryId, ...menuData } = updateData;
 
         try {
             await this.prisma.menuItem.update({
                 where: { id },
                 data: {
                     ...menuData,
+                    ...(categoryId !== undefined && { categoryId: await this.resolveCategoryIdOrThrow(categoryId) }),
                     ...(submenu !== undefined && {
                         menuSubMenus: {
                             // Soft-delete existing mappings

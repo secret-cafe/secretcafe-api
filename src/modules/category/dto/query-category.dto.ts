@@ -1,5 +1,11 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export enum CategoryStatus {
+  ALL = 'all',
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+}
 
 export class QueryCategoryDto {
   @IsOptional()
@@ -17,4 +23,8 @@ export class QueryCategoryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(CategoryStatus)
+  status?: CategoryStatus;
 }

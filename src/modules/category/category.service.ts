@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { QueryCategoryDto } from './dto/query-category.dto';
+import { QueryCategoryDto, CategoryStatus } from './dto/query-category.dto';
 import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
 import { isNonEmptyString } from 'src/common/utils/utils';
@@ -62,11 +62,16 @@ export class CategoryService {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 10;
     const skip = (page - 1) * limit;
+    const status = query?.status;
+    const ignorePagination = status === CategoryStatus.ALL;
 
     const where: Prisma.CategoryWhereInput = {
       deletedAt: null,
       ...(query?.search && {
         name: { contains: query.search },
+      }),
+      ...((status === CategoryStatus.ACTIVE || status === CategoryStatus.INACTIVE) && {
+        isActive: status === CategoryStatus.ACTIVE,
       }),
     };
 
@@ -75,8 +80,7 @@ export class CategoryService {
         where,
         select: this.categorySelect,
         orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
+        ...(ignorePagination ? {} : { skip, take: limit }),
       }),
       this.prisma.category.count({ where }),
     ]);
@@ -85,12 +89,16 @@ export class CategoryService {
       status: true,
       message: 'Categories fetched successfully',
       data: categories.map((category) => this.mapCategory(category)),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      ...(ignorePagination
+        ? {}
+        : {
+            pagination: {
+              page,
+              limit,
+              total,
+              totalPages: Math.ceil(total / limit),
+            },
+          }),
     };
   }
 

@@ -412,17 +412,17 @@ export class MenuService {
             let subMenuItem;
 
             // 1. If subMenuId is provided, look up by UUID
-            if (item.subMenuId) {
+            if (item.subMenuItemId) {
                 subMenuItem = await this.prisma.subMenuItem.findFirst({
                     where: {
-                        subMenuId: item.subMenuId,
+                        subMenuId: item.subMenuItemId,
                         deletedAt: null,
                     },
                 });
 
                 if (!subMenuItem) {
                     throwBadRequestException(
-                        `Sub menu item with ID ${item.subMenuId} not found.`,
+                        `Sub menu item with ID ${item.subMenuItemId} not found.`,
                     );
                     return [];
                 }

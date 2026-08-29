@@ -38,7 +38,7 @@ export class CreateMenuDto {
 class SubMenuDto {
   @IsOptional()
   @IsString()
-  subMenuId?: string;
+  subMenuItemId?: string;
 
   @IsOptional()
   @IsString()

@@ -27,7 +27,7 @@ export class SubmenuService {
   private mapSubMenu(subMenu: any): any {
     if (!subMenu) return subMenu;
     const { subMenuId, ...rest } = subMenu;
-    return { ...rest, id: subMenuId };
+    return { id: subMenuId, ...rest };
   }
 
   private async findSubMenuOrThrow(subMenuId: string) {
@@ -101,13 +101,13 @@ export class SubmenuService {
       ...(ignorePagination
         ? {}
         : {
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages: Math.ceil(total / limit),
-            },
-          }),
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        }),
     };
   }
 

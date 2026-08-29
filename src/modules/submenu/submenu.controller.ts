@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { SubmenuService } from './submenu.service';
 import { CreateSubMenuItemDto, UpdateSubMenuItemDto } from './dto/submenu.dto';
+import { QuerySubMenuDto } from './dto/query-submenu.dto';
 import { Role } from 'src/common/constants/constants';
 import { Auth } from 'src/common/decorators/auth.decorator';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('submenu')
 export class SubmenuController {
@@ -10,29 +12,36 @@ export class SubmenuController {
 
   @Post()
   @Auth(Role.SUPER_ADMIN, Role.ADMIN)
-  create(@Body() dto: CreateSubMenuItemDto) {
-    return this.submenuService.create(dto);
+  create(@Body() dto: CreateSubMenuItemDto, @CurrentUser('userId') userId?: number) {
+    return this.submenuService.create(dto, userId);
   }
 
   @Get()
-  findAll() {
-    return this.submenuService.findAll();
+  findAll(@Query() query: QuerySubMenuDto) {
+    return this.submenuService.findAll(query);
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.submenuService.findOne(id);
+  @Get(':subMenuId')
+  findOne(@Param('subMenuId', ParseUUIDPipe) subMenuId: string) {
+    return this.submenuService.findOne(subMenuId);
   }
 
-  @Patch(':id')
+  @Patch(':subMenuId')
   @Auth(Role.SUPER_ADMIN, Role.ADMIN)
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSubMenuItemDto) {
-    return this.submenuService.update(id, dto);
+  update(
+    @Param('subMenuId', ParseUUIDPipe) subMenuId: string,
+    @Body() dto: UpdateSubMenuItemDto,
+    @CurrentUser('userId') updatedById?: number,
+  ) {
+    return this.submenuService.update(subMenuId, dto, updatedById);
   }
 
-  @Delete(':id')
+  @Delete(':subMenuId')
   @Auth(Role.SUPER_ADMIN, Role.ADMIN)
-  delete(@Param('id', ParseIntPipe) id: number) {
-    return this.submenuService.delete(id);
+  delete(
+    @Param('subMenuId', ParseUUIDPipe) subMenuId: string,
+    @CurrentUser('userId') updatedById?: number,
+  ) {
+    return this.submenuService.delete(subMenuId, updatedById);
   }
 }

@@ -621,6 +621,7 @@ export class SeedService {
                 if (!menuItem) {
                     menuItem = await this.prisma.menuItem.create({
                         data: {
+                            menuId: randomUUID(),
                             categoryId: categoryMap[menu.category],
                             name: menu.name,
                             price: menu.price,
@@ -645,6 +646,7 @@ export class SeedService {
                     if (!subMenuItem) {
                         subMenuItem = await this.prisma.subMenuItem.create({
                             data: {
+                                subMenuId: randomUUID(),
                                 name: sub.name,
                                 price: sub.price,
                                 available: true,

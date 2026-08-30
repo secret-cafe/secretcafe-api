@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from 'generated/prisma/client';
 import { OrderStatus } from 'generated/prisma/enums';
+import { randomUUID } from 'crypto';
 import { OrderValidationService } from './order-validation.service';
 import { ProcessOrderItemDto, ProcessOrderSubMenuItemDto } from './dto/order.dto';
 import { throwBadRequestException } from 'src/common/utils/http-exception.helper';
@@ -24,8 +25,13 @@ export class OrderItemService {
 
     /**
      * Prepares item payloads for a **new** order (all items are new).
+     * Generates public UUIDs for each order item and sub-menu item.
      */
-    async prepareNewItems(tx: Prisma.TransactionClient, items: ProcessOrderItemDto[]): Promise<PreparedItemsResult> {
+    async prepareNewItems(
+        tx: Prisma.TransactionClient,
+        items: ProcessOrderItemDto[],
+        actorId?: number,
+    ): Promise<PreparedItemsResult> {
         this.validation.validateNoDuplicates(items);
 
         const menuIds = items.map((i) => i.menuItemId);
@@ -52,20 +58,24 @@ export class OrderItemService {
                 subtotal = subtotal.add(subTotal);
 
                 orderSubMenuItemsData.push({
-                    subMenuItemId: sub.subMenuItemId,
+                    orderSubMenuItemId: randomUUID(),
+                    subMenuItemId: subMenuItem.id,
                     quantity: qty,
                     unitPrice: subMenuItem.price,
                     totalPrice: subTotal,
                     notes: sub.notes,
+                    createdBy: actorId ?? null,
                 });
             }
 
             const entry: ItemData = {
-                menuItemId: item.menuItemId,
+                orderItemId: randomUUID(),
+                menuItemId: menu.id,
                 quantity: item.quantity,
                 unitPrice: menu.price,
                 totalPrice: itemTotal,
                 notes: item.notes,
+                createdBy: actorId ?? null,
             };
 
             if (orderSubMenuItemsData.length > 0) {
@@ -85,46 +95,61 @@ export class OrderItemService {
      * - Items with `orderItemId` + `isCancelled: false` → update in place
      * - Items without `orderItemId`                     → create new item
      *
+     * Incoming `orderItemId`s are public UUIDs; `existingMap` is keyed by the
+     * same public UUID so the internal numeric id is never needed from the client.
+     *
      * @returns The recalculated subtotal after all changes.
      */
     async applyItemChanges(
         tx: Prisma.TransactionClient,
         orderId: number,
         items: ProcessOrderItemDto[],
+        actorId?: number,
     ): Promise<Prisma.Decimal> {
         this.validation.validateNoDuplicates(items);
 
         // Validate against existing non-cancelled items in the DB
         await this.validation.validateNoDuplicatesWithExisting(tx, orderId, items);
 
-        // Fetch existing non-cancelled items
+        // Fetch existing non-cancelled items (with their sub-menu UUIDs for diffing)
         const existingItems = await tx.orderItem.findMany({
             where: { orderId, isCancelled: false },
-            include: { orderSubMenuItem: true },
+            include: {
+                orderSubMenuItem: {
+                    include: {
+                        subMenuItem: { select: { subMenuId: true } },
+                    },
+                },
+            },
         });
 
-        const existingMap = new Map(existingItems.map((e) => [e.id, e]));
+        const existingMap = new Map(existingItems.map((e) => [e.orderItemId, e]));
 
         // Process each incoming item
         for (const incoming of items) {
-            if (incoming.orderItemId !== undefined) {
-                if (incoming.isCancelled) {
-                    // Explicitly cancel this item
-                    await tx.orderSubMenuItem.updateMany({
-                        where: { orderItemId: incoming.orderItemId },
-                        data: { isCancelled: true },
-                    });
-                    await tx.orderItem.update({
-                        where: { id: incoming.orderItemId },
-                        data: { isCancelled: true },
-                    });
-                } else {
-                    // Update existing item in place
-                    await this.updateExistingItem(tx, incoming, existingMap);
+            if (incoming.orderItemId && incoming.isCancelled) {
+                // Explicitly cancel this item
+                const existing = existingMap.get(incoming.orderItemId);
+                if (!existing) {
+                    throwBadRequestException(
+                        `Order item ID ${incoming.orderItemId} not found or already cancelled.`,
+                    );
                 }
+
+                await tx.orderSubMenuItem.updateMany({
+                    where: { orderItemId: existing!.id },
+                    data: { isCancelled: true, updatedBy: actorId ?? null },
+                });
+                await tx.orderItem.update({
+                    where: { id: existing!.id },
+                    data: { isCancelled: true, updatedBy: actorId ?? null },
+                });
+            } else if (incoming.orderItemId) {
+                // Update existing item in place
+                await this.updateExistingItem(tx, incoming, existingMap, actorId);
             } else {
                 // Create new item
-                await this.createNewItem(tx, incoming, orderId);
+                await this.createNewItem(tx, incoming, orderId, actorId);
             }
         }
 
@@ -162,7 +187,8 @@ export class OrderItemService {
     private async updateExistingItem(
         tx: Prisma.TransactionClient,
         incoming: ProcessOrderItemDto,
-        existingMap: Map<number, any>,
+        existingMap: Map<string | null, any>,
+        actorId?: number,
     ) {
         const existing = existingMap.get(incoming.orderItemId!);
         if (!existing) {
@@ -173,7 +199,7 @@ export class OrderItemService {
         const menuMap = await this.validation.resolveMenuItems([incoming.menuItemId]);
         const menu = menuMap.get(incoming.menuItemId)!;
 
-        // Diff sub-menu items
+        // Diff sub-menu items by their public UUID (`subMenuId`)
         const incomingSubIds = new Set(
             (incoming.orderSubMenuItems || []).map((s) => s.subMenuItemId),
         );
@@ -181,12 +207,12 @@ export class OrderItemService {
 
         // Cancel removed subs
         const removedSubIds = activeSubs
-            .filter((s: any) => !incomingSubIds.has(s.subMenuItemId))
+            .filter((s: any) => !incomingSubIds.has(s.subMenuItem?.subMenuId))
             .map((s: any) => s.id);
         if (removedSubIds.length > 0) {
             await tx.orderSubMenuItem.updateMany({
                 where: { id: { in: removedSubIds } },
-                data: { isCancelled: true },
+                data: { isCancelled: true, updatedBy: actorId ?? null },
             });
         }
 
@@ -196,7 +222,7 @@ export class OrderItemService {
 
         // Update or create sub-items
         for (const incomingSub of incoming.orderSubMenuItems || []) {
-            const match = activeSubs.find((s: any) => s.subMenuItemId === incomingSub.subMenuItemId);
+            const match = activeSubs.find((s: any) => s.subMenuItem?.subMenuId === incomingSub.subMenuItemId);
             if (match) {
                 const sub = subMap.get(incomingSub.subMenuItemId)!;
                 const subTotal = sub.price.mul(incomingSub.quantity ?? 1);
@@ -206,6 +232,7 @@ export class OrderItemService {
                         quantity: incomingSub.quantity ?? 1,
                         totalPrice: subTotal,
                         notes: incomingSub.notes,
+                        updatedBy: actorId ?? null,
                     },
                 });
             } else {
@@ -213,12 +240,14 @@ export class OrderItemService {
                 const subTotal = sub.price.mul(incomingSub.quantity ?? 1);
                 await tx.orderSubMenuItem.create({
                     data: {
+                        orderSubMenuItemId: randomUUID(),
                         orderItemId: existing.id,
-                        subMenuItemId: incomingSub.subMenuItemId,
+                        subMenuItemId: sub.id,
                         quantity: incomingSub.quantity ?? 1,
                         unitPrice: sub.price,
                         totalPrice: subTotal,
                         notes: incomingSub.notes,
+                        createdBy: actorId ?? null,
                     },
                 });
             }
@@ -234,6 +263,7 @@ export class OrderItemService {
                 totalPrice: simpleTotal,
                 notes: incoming.notes,
                 status: OrderStatus.PENDING,
+                updatedBy: actorId ?? null,
             },
         });
     }
@@ -242,6 +272,7 @@ export class OrderItemService {
         tx: Prisma.TransactionClient,
         incoming: ProcessOrderItemDto,
         orderId: number,
+        actorId?: number,
     ) {
         const menuMap = await this.validation.resolveMenuItems([incoming.menuItemId]);
         const menu = menuMap.get(incoming.menuItemId)!;
@@ -255,15 +286,18 @@ export class OrderItemService {
             incoming.orderSubMenuItems ?? [],
             subMap,
             new Prisma.Decimal(0),
+            actorId,
         );
 
         const data: any = {
             orderId,
-            menuItemId: incoming.menuItemId,
+            orderItemId: randomUUID(),
+            menuItemId: menu.id,
             quantity: incoming.quantity,
             unitPrice: menu.price,
             totalPrice: itemTotal,
             notes: incoming.notes,
+            createdBy: actorId ?? null,
         };
 
         if (orderSubMenuItemsData.length > 0) {
@@ -279,8 +313,9 @@ export class OrderItemService {
      */
     private buildSubMenuData(
         subItems: ProcessOrderSubMenuItemDto[],
-        subMap: Map<number, any>,
+        subMap: Map<string, any>,
         subtotal: Prisma.Decimal,
+        actorId?: number,
     ): SubMenuData[] {
         if (!subItems.length) return [];
 
@@ -291,11 +326,13 @@ export class OrderItemService {
             // eslint-disable-next-line no-param-reassign
             // We can't mutate subtotal here since it's a cloned issue — caller handles it
             return {
-                subMenuItemId: sub.subMenuItemId,
+                orderSubMenuItemId: randomUUID(),
+                subMenuItemId: subMenuItem?.id,
                 quantity: qty,
                 unitPrice: subMenuItem?.price ?? new Prisma.Decimal(0),
                 totalPrice: total,
                 notes: sub.notes,
+                createdBy: actorId ?? null,
             };
         });
     }

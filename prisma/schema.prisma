@@ -262,6 +262,7 @@ model TableSession {
 
 model Order {
   id               Int           @id @default(autoincrement()) @db.UnsignedInt
+  orderId          String?       @unique @db.VarChar(36)
   orderNumber      String        @unique @db.VarChar(50)
   sessionId        Int           @db.UnsignedInt
   tableId          Int           @db.UnsignedInt
@@ -279,6 +280,8 @@ model Order {
   acceptedBy       Int?          @db.UnsignedInt
   placedAt         DateTime      @default(now())
   completedAt      DateTime?
+  createdBy        Int?          @db.UnsignedInt
+  updatedBy        Int?          @db.UnsignedInt
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -294,10 +297,12 @@ model Order {
   @@index([sessionId])
   @@index([tableId])
   @@index([status])
+  @@index([orderId])
 }
 
 model OrderItem {
   id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  orderItemId String?     @unique @db.VarChar(36)
   orderId     Int         @db.UnsignedInt
   menuItemId  Int?        @db.UnsignedInt
   quantity    Int         @default(1)
@@ -306,6 +311,8 @@ model OrderItem {
   status      OrderStatus @default(PENDING)
   notes       String?     @db.VarChar(500)
   isCancelled Boolean     @default(false)
+  createdBy   Int?        @db.UnsignedInt
+  updatedBy   Int?        @db.UnsignedInt
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
@@ -317,26 +324,31 @@ model OrderItem {
   statusHistory     OrderStatusHistory[]
 
   @@index([orderId])
+  @@index([orderItemId])
 }
 
 model OrderSubMenuItem {
-  id            Int       @id @default(autoincrement()) @db.UnsignedInt
-  orderItemId   Int       @db.UnsignedInt
-  subMenuItemId Int?      @db.UnsignedInt
-  quantity      Int       @default(1)
-  unitPrice     Decimal   @db.Decimal(10, 2)
-  totalPrice    Decimal   @db.Decimal(10, 2)
-  notes         String?   @db.VarChar(500)
-  isCancelled   Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id                 Int       @id @default(autoincrement()) @db.UnsignedInt
+  orderSubMenuItemId String?   @unique @db.VarChar(36)
+  orderItemId        Int       @db.UnsignedInt
+  subMenuItemId      Int?      @db.UnsignedInt
+  quantity           Int       @default(1)
+  unitPrice          Decimal   @db.Decimal(10, 2)
+  totalPrice         Decimal   @db.Decimal(10, 2)
+  notes              String?   @db.VarChar(500)
+  isCancelled        Boolean   @default(false)
+  createdBy          Int?      @db.UnsignedInt
+  updatedBy          Int?      @db.UnsignedInt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
 
   // Relations
   orderItem   OrderItem    @relation(fields: [orderItemId], references: [id])
   subMenuItem SubMenuItem? @relation(fields: [subMenuItemId], references: [id])
 
   @@index([orderItemId])
+  @@index([orderSubMenuItemId])
 }
 
 model OrderStatusHistory {

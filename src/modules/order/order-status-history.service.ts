@@ -39,16 +39,22 @@ export class OrderStatusHistoryService {
   /**
    * Retrieves the full status timeline for an order.
    * Ordered oldest-first for a chronological view.
+   *
+   * Only public UUIDs (`orderId`, `orderItemId`, `menuId`) are returned for
+   * the related records so internal numeric primary keys never leak.
    */
   public async getHistoryForOrder(orderId: number) {
     return this.prisma.orderStatusHistory.findMany({
       where: { orderId },
       orderBy: { createdAt: 'asc' },
       include: {
+        order: {
+          select: { orderId: true },
+        },
         item: {
           select: {
-            id: true,
-            menuItem: { select: { id: true, name: true } },
+            orderItemId: true,
+            menuItem: { select: { menuId: true, name: true } },
           },
         },
       },

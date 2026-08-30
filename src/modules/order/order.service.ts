@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from 'generated/prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { OrderValidationService } from './order-validation.service';
 import { OrderItemService } from './order-item.service';
 import { OrderStatusHistoryService } from './order-status-history.service';
 import { ProcessOrderDto, UpdateOrderItemDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { QueryOrderDto } from './dto/query-order.dto';
 import { OrderStatus, SessionStatus } from 'generated/prisma/enums';
 import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { Role } from 'src/common/constants/constants';
@@ -31,8 +34,8 @@ export class OrderService {
     // #region Query Selectors (Single Source of Truth)
 
     private readonly orderSelect = {
-        id: true,
-        tableId: true,
+        orderId: true,
+        table: { select: { tableId: true } },
         orderNumber: true,
         orderType: true,
         status: true,
@@ -46,8 +49,7 @@ export class OrderService {
         notes: true,
         items: {
             select: {
-                id: true,
-                orderId: true,
+                orderItemId: true,
                 status: true,
                 quantity: true,
                 unitPrice: true,
@@ -55,18 +57,18 @@ export class OrderService {
                 notes: true,
                 isCancelled: true,
                 menuItem: {
-                    select: { id: true, name: true, price: true, menuType: true },
+                    select: { menuId: true, name: true, price: true, menuType: true },
                 },
                 orderSubMenuItem: {
                     select: {
-                        id: true,
+                        orderSubMenuItemId: true,
                         quantity: true,
                         unitPrice: true,
                         totalPrice: true,
                         notes: true,
                         isCancelled: true,
                         subMenuItem: {
-                            select: { id: true, name: true, price: true },
+                            select: { subMenuId: true, name: true, price: true },
                         },
                     },
                 },
@@ -88,11 +90,14 @@ export class OrderService {
      * - `orderItemId` absent                        → create new item
      * - `orderItemId` present + `isCancelled: false` → update existing item
      * - `orderItemId` present + `isCancelled: true`  → cancel existing item
+     *
+     * All IDs in the DTO (`tableId`, `menuItemId`, `subMenuItemId`, `orderItemId`)
+     * are public UUIDs. The internal numeric primary keys are never accepted or returned.
      */
-    public async processOrder(dto: ProcessOrderDto) {
-        // 1. Validate session
+    public async processOrder(dto: ProcessOrderDto, createdById?: number) {
+        // 1. Validate session (resolved via the table UUID)
         const session = await this.prisma.tableSession.findFirst({
-            where: { tableId: dto.tableId, status: SessionStatus.ACTIVE },
+            where: { table: { tableId: dto.tableId }, status: SessionStatus.ACTIVE },
         });
 
         if (!session) {
@@ -105,7 +110,8 @@ export class OrderService {
             return;
         }
 
-        let orderId: number;
+        let orderId: string | undefined;
+        let internalId: number | undefined;
         let isNew = false;
 
         // 2. Execute within a single transaction
@@ -113,7 +119,7 @@ export class OrderService {
             // Look up existing order by session (no orderId from client needed)
             const existing = await tx.order.findFirst({
                 where: { sessionId: session.id },
-                select: { id: true, status: true },
+                select: { id: true, orderId: true, status: true },
             });
 
             if (existing && (existing.status === OrderStatus.COMPLETED || existing.status === OrderStatus.CANCELLED)) {
@@ -127,6 +133,7 @@ export class OrderService {
                     tx,
                     existing.id,
                     dto.orderItems,
+                    createdById,
                 );
 
                 await tx.order.update({
@@ -135,37 +142,43 @@ export class OrderService {
                         notes: dto.notes ?? undefined,
                         subtotal: recalculatedSubtotal,
                         totalAmount: recalculatedSubtotal,
+                        updatedBy: createdById ?? null,
                     },
                 });
 
-                orderId = existing.id;
+                orderId = existing.orderId ?? undefined;
+                internalId = existing.id;
             }
             // === CREATE FLOW ===
             else {
                 const { subtotal, itemsData } = await this.itemService.prepareNewItems(
                     tx,
                     dto.orderItems,
+                    createdById,
                 );
 
                 const created = await tx.order.create({
                     data: {
+                        orderId: randomUUID(),
                         orderNumber: `ORD-${Date.now()}`,
-                        tableId: dto.tableId,
+                        tableId: session.tableId,
                         sessionId: session.id,
                         subtotal,
                         totalAmount: subtotal,
                         notes: dto.notes,
+                        createdBy: createdById ?? null,
                         items: { create: itemsData },
                     },
                 });
 
-                orderId = created.id;
+                orderId = created.orderId ?? undefined;
+                internalId = created.id;
                 isNew = true;
             }
         });
 
         // 3. Sync order-level status (outside transaction for simplicity)
-        await this.syncOrderStatus(orderId!);
+        await this.syncOrderStatus(internalId!);
 
         return {
             status: true,
@@ -186,9 +199,9 @@ export class OrderService {
      * from the items. When `false` (default), only the order-level status
      * is updated directly.
      */
-    public async updateOrderStatus(dto: UpdateOrderStatusDto, role: Role) {
-        const order = await this.prisma.order.findUnique({
-            where: { id: dto.orderId },
+    public async updateOrderStatus(dto: UpdateOrderStatusDto, role: Role, updatedById?: number) {
+        const order = await this.prisma.order.findFirst({
+            where: { orderId: dto.orderId },
             select: { id: true, status: true },
         });
 
@@ -204,14 +217,14 @@ export class OrderService {
         if (dto.isItemsUpdate) {
             // 1. Fetch current item statuses BEFORE updating
             const currentItems = await this.prisma.orderItem.findMany({
-                where: { orderId: dto.orderId, isCancelled: false },
+                where: { orderId: order.id, isCancelled: false },
                 select: { id: true, status: true },
             });
 
             // 2. Update all items to the new status
             await this.prisma.orderItem.updateMany({
-                where: { orderId: dto.orderId, isCancelled: false },
-                data: { status: dto.status, isCancelled: dto.status == OrderStatus.CANCELLED },
+                where: { orderId: order.id, isCancelled: false },
+                data: { status: dto.status, isCancelled: dto.status == OrderStatus.CANCELLED, updatedBy: updatedById ?? null },
             });
 
             // 2b. If cancelling, also cancel all related sub-menu items
@@ -219,11 +232,11 @@ export class OrderService {
                 await this.prisma.orderSubMenuItem.updateMany({
                     where: {
                         orderItem: {
-                            orderId: dto.orderId,
+                            orderId: order.id,
                             isCancelled: true,
                         },
                     },
-                    data: { isCancelled: true },
+                    data: { isCancelled: true, updatedBy: updatedById ?? null },
                 });
             }
 
@@ -231,7 +244,7 @@ export class OrderService {
             for (const item of currentItems) {
                 if (item.status !== dto.status) {
                     await this.history.log({
-                        orderId: dto.orderId,
+                        orderId: order.id,
                         itemId: item.id,
                         fromStatus: item.status,
                         toStatus: dto.status,
@@ -241,24 +254,26 @@ export class OrderService {
 
             // 4. Recalculate subtotal/totalAmount (cancelled items excluded)
             await this.prisma.$transaction(async (tx) => {
-                const recalculatedSubtotal = await this.itemService.recalculateSubtotal(tx, dto.orderId);
+                const recalculatedSubtotal = await this.itemService.recalculateSubtotal(tx, order.id);
                 await tx.order.update({
-                    where: { id: dto.orderId },
+                    where: { id: order.id },
                     data: {
                         subtotal: recalculatedSubtotal,
                         totalAmount: recalculatedSubtotal,
+                        updatedBy: updatedById ?? null,
                     },
                 });
             });
 
             // 5. Sync order-level status from items
-            await this.syncOrderStatus(dto.orderId);
+            await this.syncOrderStatus(order.id);
         } else {
             // Only update the order-level status directly
             await this.prisma.order.update({
-                where: { id: dto.orderId },
+                where: { id: order.id },
                 data: {
-                    status: dto.status
+                    status: dto.status,
+                    updatedBy: updatedById ?? null,
                 },
             });
         }
@@ -269,6 +284,7 @@ export class OrderService {
             fromStatus: order.status,
             toStatus: dto.status,
             reason: dto.notes,
+            changedBy: updatedById,
         });
 
         return {
@@ -287,13 +303,12 @@ export class OrderService {
      * @param role - The role of the current user performing the update.
      * @returns An object with a success status and message.
      */
-    public async updateOrderItemStatus(dto: UpdateOrderItemDto, role: Role) {
-        const orderItemId = dto.orderItemId;
+    public async updateOrderItemStatus(dto: UpdateOrderItemDto, role: Role, updatedById?: number) {
         const status = dto.status;
 
-        const orderItem = await this.prisma.orderItem.findUnique({
+        const orderItem = await this.prisma.orderItem.findFirst({
             where: {
-                id: orderItemId,
+                orderItemId: dto.orderItemId,
             },
             select: {
                 id: true,
@@ -319,21 +334,23 @@ export class OrderService {
 
         await this.prisma.orderItem.update({
             where: {
-                id: orderItemId,
+                id: orderItem!.id,
             },
             data: {
                 status: dto.status,
                 isCancelled: dto.status == OrderStatus.CANCELLED,
+                updatedBy: updatedById ?? null,
             },
         });
 
         if (dto.status == OrderStatus.CANCELLED) {
             await this.prisma.orderSubMenuItem.updateMany({
                 where: {
-                    orderItemId: orderItemId,
+                    orderItemId: orderItem!.id,
                 },
                 data: {
-                    isCancelled: dto.status == OrderStatus.CANCELLED,
+                    isCancelled: true,
+                    updatedBy: updatedById ?? null,
                 },
             });
         }
@@ -346,6 +363,7 @@ export class OrderService {
                 data: {
                     subtotal: recalculatedSubtotal,
                     totalAmount: recalculatedSubtotal,
+                    updatedBy: updatedById ?? null,
                 },
             });
         });
@@ -358,6 +376,7 @@ export class OrderService {
             itemId: orderItem!.id,
             fromStatus: orderItem!.status,
             toStatus: status,
+            changedBy: updatedById,
         });
 
         return {
@@ -370,10 +389,15 @@ export class OrderService {
 
     // #region Retrieval
 
-    public async getActiveOrders(orderId?: number) {
+    public async getActiveOrders(orderId?: string) {
+        if (!orderId) {
+            throwBadRequestException('Order not found.');
+            return;
+        }
+
         const orders = await this.prisma.order.findMany({
             where: {
-                id: orderId,
+                orderId,
                 status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
             },
             select: this.orderSelect
@@ -390,34 +414,58 @@ export class OrderService {
         };
     }
 
-    public async getTableWiseOrders() {
-        const orders = await this.prisma.order.findMany({
-            select: {
-                ...this.orderSelect,
-                table: { select: { id: true, name: true } },
-            }
-        });
+    public async getTableWiseOrders(query: QueryOrderDto) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 10;
+        const skip = (page - 1) * limit;
+
+        const where: Prisma.OrderWhereInput = {
+            deletedAt: null,
+            ...(query.search && {
+                orderNumber: { contains: query.search },
+            }),
+        };
+
+        const [orders, total] = await this.prisma.$transaction([
+            this.prisma.order.findMany({
+                where,
+                select: {
+                    ...this.orderSelect,
+                    table: { select: { tableId: true, name: true } },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+            }),
+            this.prisma.order.count({ where }),
+        ]);
 
         const grouped = Object.values(
-            orders.reduce((acc, { id, status, items, table, ...rest }) => {
-                const tid = table?.id;
-                if (!acc[tid]) {
-                    acc[tid] = { tableId: tid, tableName: table?.name, orders: [] };
-                }
+            orders.reduce((acc, { status, items, table, ...rest }) => {
+                const tid = table?.tableId;
+                if (!tid) return acc;
+
+                acc[tid] = acc[tid] ?? { tableId: tid, tableName: table?.name, orders: [] };
                 acc[tid].orders.push({
-                    orderId: id,
                     orderStatus: status,
+                    tableId: tid,
                     ...rest,
                     items: this.transformOrderItems(items),
                 });
                 return acc;
-            }, {} as Record<number, any>),
+            }, {} as Record<string, any>),
         );
 
         return {
             status: true,
             message: 'Orders fetched successfully.',
             data: grouped,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
         };
     }
 
@@ -444,10 +492,10 @@ export class OrderService {
      * Retrieves the full status timeline for an order.
      * Ordered oldest-first for a chronological view.
      */
-    public async getOrderStatusHistory(orderId: number) {
-        // Verify order exists
-        const order = await this.prisma.order.findUnique({
-            where: { id: orderId },
+    public async getOrderStatusHistory(orderId: string) {
+        // Verify order exists (by public UUID)
+        const order = await this.prisma.order.findFirst({
+            where: { orderId },
             select: { id: true },
         });
 
@@ -456,12 +504,12 @@ export class OrderService {
             return;
         }
 
-        const history = await this.history.getHistoryForOrder(orderId);
+        const history = await this.history.getHistoryForOrder(order.id);
 
         return {
             status: true,
             message: 'Order status history fetched successfully.',
-            data: history,
+            data: this.transformOrderHistory(history),
         };
     }
 
@@ -497,27 +545,56 @@ export class OrderService {
     // #region Response Transformation
 
     private transformOrders(orders: any[]): any[] {
-        return orders.map(({ id, status, items, ...rest }) => ({
-            orderId: id,
+        return orders.map(({ orderId, status, items, table, ...rest }) => ({
+            orderId,
             orderStatus: status,
+            tableId: table?.tableId ?? null,
             ...rest,
             items: this.transformOrderItems(items),
         }));
     }
 
     private transformOrderItems(items: any[]): any[] {
-        return items.map(({ id: orderItemId, status: orderItemStatus, menuItem, orderSubMenuItem, ...rest }) => ({
+        return items.map(({ orderItemId, status: orderItemStatus, menuItem, orderSubMenuItem, ...rest }) => ({
             orderItemId,
             orderItemStatus,
             ...rest,
-            menuItem: menuItem && { menuItemId: menuItem.id, ...menuItem },
+            menuItem: menuItem && {
+                menuItemId: menuItem.menuId,
+                name: menuItem.name,
+                price: menuItem.price,
+                menuType: menuItem.menuType,
+            },
             orderSubMenuItems: orderSubMenuItem?.map(
-                ({ id: orderSubMenuItemId, subMenuItem, ...subRest }: any) => ({
+                ({ orderSubMenuItemId, subMenuItem, ...subRest }: any) => ({
                     orderSubMenuItemId,
                     ...subRest,
-                    subMenuItem: subMenuItem && { subMenuItemId: subMenuItem.id, ...subMenuItem },
+                    subMenuItem: subMenuItem && {
+                        subMenuItemId: subMenuItem.subMenuId,
+                        name: subMenuItem.name,
+                        price: subMenuItem.price,
+                    },
                 }),
             ),
+        }));
+    }
+
+    private transformOrderHistory(history: any[]): any[] {
+        return history.map((h: any) => ({
+            orderId: h.order?.orderId ?? null,
+            fromStatus: h.fromStatus,
+            toStatus: h.toStatus,
+            changedBy: h.changedBy,
+            reason: h.reason,
+            metadata: h.metadata,
+            createdAt: h.createdAt,
+            item: h.item
+                ? {
+                      orderItemId: h.item.orderItemId,
+                      menuItemId: h.item.menuItem?.menuId ?? null,
+                      menuItemName: h.item.menuItem?.name ?? null,
+                  }
+                : null,
         }));
     }
 

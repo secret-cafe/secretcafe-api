@@ -1,13 +1,13 @@
-import { IsArray, IsBoolean, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus } from 'generated/prisma/client';
 
 /** DTO for processing an order — handles both CREATE and UPDATE in one flow. */
 export class ProcessOrderDto {
-    /** Table ID (used to look up the active session). */
+    /** Table UUID (used to look up the active session). */
     @IsNotEmpty()
-    @IsInt()
-    tableId!: number;
+    @IsUUID()
+    tableId!: string;
 
     /** Optional notes for the order. */
     @IsOptional()
@@ -27,16 +27,18 @@ export class ProcessOrderDto {
  * - `orderItemId` present + `isCancelled` false → update existing item in place
  * - `orderItemId` present + `isCancelled` true  → cancel this item
  * - `orderItemId` absent                        → create a brand-new item
+ *
+ * All IDs (`orderItemId`, `menuItemId`, `subMenuItemId`) are public UUIDs.
  */
 export class ProcessOrderItemDto {
-    /** ID of an existing order item to update or cancel (omit for new items). */
+    /** UUID of an existing order item to update or cancel (omit for new items). */
     @IsOptional()
-    @IsInt()
-    orderItemId?: number;
+    @IsUUID()
+    orderItemId?: string;
 
     @IsNotEmpty()
-    @IsInt()
-    menuItemId!: number;
+    @IsUUID()
+    menuItemId!: string;
 
     @IsNotEmpty()
     @IsInt()
@@ -62,8 +64,8 @@ export class ProcessOrderItemDto {
 /** DTO for a sub-menu item attached to an order item. */
 export class ProcessOrderSubMenuItemDto {
     @IsNotEmpty()
-    @IsInt()
-    subMenuItemId!: number;
+    @IsUUID()
+    subMenuItemId!: string;
 
     @IsOptional()
     @IsInt()
@@ -78,8 +80,8 @@ export class ProcessOrderSubMenuItemDto {
 /** DTO for updating the status of an entire order. */
 export class UpdateOrderStatusDto {
     @IsNotEmpty()
-    @IsInt()
-    orderId!: number;
+    @IsUUID()
+    orderId!: string;
 
     @IsNotEmpty()
     @IsEnum(OrderStatus)
@@ -97,10 +99,10 @@ export class UpdateOrderStatusDto {
 
 /** DTO for updating the status of a specific order item. */
 export class UpdateOrderItemDto {
-    /** The ID of the order item to update. */
+    /** The UUID of the order item to update. */
     @IsNotEmpty()
-    @IsInt()
-    orderItemId!: number;
+    @IsUUID()
+    orderItemId!: string;
 
     /** The new status to assign to the order item. */
     @IsNotEmpty()

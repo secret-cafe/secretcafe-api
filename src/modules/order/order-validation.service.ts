@@ -8,6 +8,7 @@ import { ProcessOrderItemDto } from './dto/order.dto';
 
 export interface MenuItemInfo {
     id: number;
+    menuId: string;
     price: Prisma.Decimal;
     name: string;
     available: boolean;
@@ -15,6 +16,7 @@ export interface MenuItemInfo {
 
 export interface SubMenuItemInfo {
     id: number;
+    subMenuId: string;
     price: Prisma.Decimal;
     name: string;
     available: boolean;
@@ -99,8 +101,8 @@ export class OrderValidationService {
     // #region Duplicate Detection
 
     /** Throws if any menuItemId appears more than once in the payload. */
-    validateNoDuplicates(items: { menuItemId: number }[]): void {
-        const seen = new Set<number>();
+    validateNoDuplicates(items: { menuItemId: string }[]): void {
+        const seen = new Set<string>();
         for (const item of items) {
             if (seen.has(item.menuItemId)) {
                 throwBadRequestException(
@@ -130,12 +132,18 @@ export class OrderValidationService {
         // Fetch all non-cancelled items currently in the order
         const existingItems = await tx.orderItem.findMany({
             where: { orderId, isCancelled: false },
-            select: { id: true, menuItemId: true },
+            select: {
+                id: true,
+                orderItemId: true,
+                menuItem: { select: { menuId: true } },
+            },
         });
 
-        // Map menuItemId → orderItemId for existing non-cancelled items
+        // Map menuId (public UUID) → orderItemId (public UUID) for existing non-cancelled items
         const existingMenuMap = new Map(
-            existingItems.map((e) => [e.menuItemId, e.id]),
+            existingItems
+                .filter((e) => e.menuItem?.menuId)
+                .map((e) => [e.menuItem!.menuId, e.orderItemId]),
         );
 
         for (const incoming of items) {
@@ -169,16 +177,19 @@ export class OrderValidationService {
     // #region Menu & Sub-Menu Lookup
 
     /**
-     * Batch-fetches menu items and returns a price/availability map.
+     * Batch-fetches menu items by public `menuId` (UUID) and returns a
+     * price/availability map keyed by that UUID.
      * Throws if any menu item is missing or unavailable.
      */
-    async resolveMenuItems(ids: number[]): Promise<Map<number, MenuItemInfo>> {
+    async resolveMenuItems(ids: string[]): Promise<Map<string, MenuItemInfo>> {
         const items = await this.prisma.menuItem.findMany({
-            where: { id: { in: [...new Set(ids)] } },
-            select: { id: true, price: true, name: true, available: true },
+            where: { menuId: { in: [...new Set(ids)] } },
+            select: { id: true, menuId: true, price: true, name: true, available: true },
         });
 
-        const map = new Map(items.map((m) => [m.id, m]));
+        const map = new Map(
+            items.map((m) => [m.menuId!, m] as [string, MenuItemInfo]),
+        );
 
         for (const id of ids) {
             const item = map.get(id);
@@ -194,18 +205,21 @@ export class OrderValidationService {
     }
 
     /**
-     * Batch-fetches sub-menu items and returns a price/availability map.
+     * Batch-fetches sub-menu items by public `subMenuId` (UUID) and returns a
+     * price/availability map keyed by that UUID.
      * Throws if any sub-menu item is missing or unavailable.
      */
-    async resolveSubMenuItems(ids: number[]): Promise<Map<number, SubMenuItemInfo>> {
+    async resolveSubMenuItems(ids: string[]): Promise<Map<string, SubMenuItemInfo>> {
         if (ids.length === 0) return new Map();
 
         const items = await this.prisma.subMenuItem.findMany({
-            where: { id: { in: [...new Set(ids)] } },
-            select: { id: true, price: true, name: true, available: true },
+            where: { subMenuId: { in: [...new Set(ids)] } },
+            select: { id: true, subMenuId: true, price: true, name: true, available: true },
         });
 
-        const map = new Map(items.map((s) => [s.id, s]));
+        const map = new Map(
+            items.map((s) => [s.subMenuId!, s] as [string, SubMenuItemInfo]),
+        );
 
         for (const id of ids) {
             const item = map.get(id);

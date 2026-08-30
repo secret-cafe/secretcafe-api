@@ -1,6 +1,24 @@
-import { IsBoolean, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 import { TableType } from 'generated/prisma/client';
+import { Type } from 'class-transformer';
+
+export enum _tableStatus {
+  ALL = 'all',
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+}
 
 export class CreateTableDto {
   @IsString()
@@ -54,8 +72,24 @@ export class UpdateTableDto extends PartialType(CreateTableDto) {
   regenerateQr?: boolean;
 }
 
-export class GetTableByTypeDto {
+export class QueryTableDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 10;
+
   @IsOptional()
   @IsEnum(TableType)
-  type!: TableType;
+  type?: TableType;
+
+  @IsOptional()
+  @IsEnum(_tableStatus)
+  status?: _tableStatus;
 }

@@ -197,6 +197,7 @@ model MenuSubMenu {
 
 model RestaurantTable {
   id              Int         @id @default(autoincrement()) @db.UnsignedInt
+  tableId         String?     @unique @db.VarChar(36)
   name            String      @db.VarChar(100)
   type            TableType
   tableStatus     TableStatus @default(AVAILABLE)
@@ -224,6 +225,7 @@ model RestaurantTable {
   @@index([type])
   @@index([tableStatus])
   @@index([deletedAt])
+  @@index([tableId])
 }
 
 model TableSession {

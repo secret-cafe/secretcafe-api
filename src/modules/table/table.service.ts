@@ -1,21 +1,44 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
-import { CreateTableDto, UpdateTableDto } from './dto/table.dto';
+import {
+  throwBadRequestException,
+  throwNotFoundException,
+} from 'src/common/utils/http-exception.helper';
+import { _tableStatus, CreateTableDto, QueryTableDto, UpdateTableDto } from './dto/table.dto';
 import { TableSessionDto } from './dto/table-session.dto';
-import { Prisma, SessionStatus, TableStatus, TableType, PaymentStatus, OrderStatus } from 'generated/prisma/client';
-import crypto from "crypto";
-import QRCode from "qrcode";
+import {
+  Prisma,
+  SessionStatus,
+  TableStatus,
+  TableType,
+  PaymentStatus,
+  OrderStatus,
+} from 'generated/prisma/client';
+import { randomBytes, randomUUID } from 'crypto';
+import QRCode from 'qrcode';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
 import { originUrl } from 'src/common/constants/constants';
 
+/**
+ * Input accepted by session/live-charge flows.
+ * Public API sends the UUID `tableId` (string); internal callers (e.g. billing)
+ * pass the internal numeric id.
+ */
+type TableIdInput = string | number;
+
+type TableSessionInput = Omit<TableSessionDto, 'tableId'> & {
+  tableId: TableIdInput;
+};
+
 @Injectable()
 export class TableService {
-
-  constructor(private readonly prisma: PrismaService, private readonly cloudinaryService: CloudinaryService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) { }
 
   private readonly tableSelect = {
-    id: true,
+    tableId: true,
     name: true,
     type: true,
     tableStatus: true,
@@ -30,6 +53,7 @@ export class TableService {
     tableToken: true,
     publicId: true,
     isActive: true,
+    createdAt: true,
   } satisfies Prisma.RestaurantTableSelect;
 
   private response<T>(message: string, data?: T, status: boolean = true) {
@@ -40,8 +64,33 @@ export class TableService {
     };
   }
 
+  /**
+   * Keep the response key `id` but its value is the UUID `tableId`.
+   * The internal numeric auto-increment `id` is never exposed.
+   */
+  private mapTable(table: any): any {
+    if (!table) return table;
+    const { tableId, ...rest } = table;
+    return { id: tableId, ...rest };
+  }
+
+  /**
+   * Resolve a public table UUID into the internal numeric table id.
+   */
+  private async resolveInternalIdOrThrow(tableId: string): Promise<number> {
+    const table = await this.prisma.restaurantTable.findFirst({
+      where: {
+        tableId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!table) throwNotFoundException(`Table with ID ${tableId} not found`);
+    return table!.id;
+  }
+
   private calculateTimeCharge(session: any) {
-    
     if (!session || !session.enableTimeRate || session.rushMode) {
       return {
         totalMinutes: 0,
@@ -52,7 +101,9 @@ export class TableService {
     const start = session.timerStartedAt || session.startedAt;
     const end = session.timerEndedAt || new Date();
 
-    const totalMinutes = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60));
+    const totalMinutes = Math.ceil(
+      (end.getTime() - start.getTime()) / (1000 * 60),
+    );
     const multiplier = session.chargePerPerson ? session.guestCount : 1;
 
     let amount: number;
@@ -77,7 +128,10 @@ export class TableService {
     const qrUrl = `${frontendOriginUrl}/customer?tableToken=${tableToken}`;
 
     const qrImage = await QRCode.toDataURL(qrUrl);
-    const uploaded = await this.cloudinaryService.uploadBase64Image(qrImage, 'QR');
+    const uploaded = await this.cloudinaryService.uploadBase64Image(
+      qrImage,
+      'QR',
+    );
 
     return uploaded;
   }
@@ -98,47 +152,53 @@ export class TableService {
     return table;
   }
 
-  public async findAll() {
-    const tables = await this.prisma.restaurantTable.findMany({
-      where: {
-        deletedAt: null,
-      },
-      select: this.tableSelect
-    });
+  public async findAll(query: QueryTableDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+    const status = query?.status;
+    const ignorePagination = status === _tableStatus.ALL;
 
-    return this.response(
-      'Tables fetched successfully',
-      tables,
-    );
+    const where: Prisma.RestaurantTableWhereInput = {
+      deletedAt: null,
+      ...(query.type && { type: query.type }),
+      ...((status === _tableStatus.ACTIVE || status === _tableStatus.INACTIVE) && {
+        isActive: status === _tableStatus.ACTIVE,
+      }),
+    };
+
+    const [tables, total] = await this.prisma.$transaction([
+      this.prisma.restaurantTable.findMany({
+        where,
+        select: this.tableSelect,
+        orderBy: { createdAt: 'desc' },
+        ...(ignorePagination ? {} : { skip, take: limit }),
+      }),
+      this.prisma.restaurantTable.count({ where }),
+    ]);
+
+    return {
+      status: true,
+      message: 'Tables fetched successfully',
+      data: tables.map((table) => this.mapTable(table)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
-  public async findOne(id: number) {
-    const table = await this.findTableOrThrow(id);
+  public async findOne(tableId: string) {
+    const internalId = await this.resolveInternalIdOrThrow(tableId);
+    const table = await this.findTableOrThrow(internalId);
 
-    return this.response(
-      'Table fetched successfully',
-      table,
-    );
-  }
-
-  public async findByType(type: TableType) {
-    const tables = await this.prisma.restaurantTable.findMany({
-      where: {
-        type,
-        deletedAt: null,
-      },
-      select: this.tableSelect,
-    });
-
-    return this.response(
-      'Tables fetched successfully',
-      tables,
-    );
+    return this.response('Table fetched successfully', this.mapTable(table));
   }
 
   public async findByToken(token: string) {
-
-    let message: string = "";
+    let message: string = '';
     let status: boolean = true;
 
     const table = await this.prisma.restaurantTable.findFirst({
@@ -151,46 +211,48 @@ export class TableService {
 
     if (!table) {
       throwNotFoundException(`Table with ${token} not found`);
-    }
-    else if (table.tableStatus !== TableStatus.AVAILABLE) {
+    } else if (table.tableStatus !== TableStatus.AVAILABLE) {
       status = false;
-      message = "Table is already booked.";
-    }
-    else {
-      message = "Tables fetched successfully";
+      message = 'Table is already booked.';
+    } else {
+      message = 'Tables fetched successfully';
     }
 
-    return this.response(message, table, status);
+    return this.response(message, this.mapTable(table), status);
   }
 
-  public async create(data: CreateTableDto) {
+  public async create(data: CreateTableDto, createdById?: number) {
     const tableToken = this.generateQrToken();
     const file = await this.generateQrImage(tableToken);
 
     const table = await this.prisma.restaurantTable.create({
       data: {
         ...data,
+        tableId: randomUUID(),
         tableToken: tableToken,
         qrCodeImageUrl: file?.url ?? null,
         publicId: file?.public_id ?? null,
+        createdBy: createdById ?? null,
       },
       select: this.tableSelect,
     });
 
-    return this.response(
-      'Table created successfully',
-      table,
-    );
+    return this.response('Table created successfully');
   }
 
-  public async update(id: number, data: UpdateTableDto) {
+  public async update(
+    tableId: string,
+    data: UpdateTableDto,
+    updatedById?: number,
+  ) {
+    const internalId = await this.resolveInternalIdOrThrow(tableId);
     const { regenerateQr, ...tableData } = data;
 
     // Fetch existing table (includes publicId for Cloudinary deletion)
-    const existingTable = await this.findTableOrThrow(id);
+    const existingTable = await this.findTableOrThrow(internalId);
     if (!existingTable) return;
 
-    let updatePayload: any = { ...tableData };
+    const updatePayload: any = { ...tableData, updatedBy: updatedById ?? null };
 
     // If regenerateQr flag is true, generate new token + QR and delete old ones
     if (regenerateQr) {
@@ -209,33 +271,40 @@ export class TableService {
     }
 
     await this.prisma.restaurantTable.update({
-      where: { id },
-      data: updatePayload
+      where: { id: internalId },
+      data: updatePayload,
     });
 
-    return this.response(
-      'Table updated successfully',
-    );
+    return this.response('Table updated successfully');
   }
 
-  public async handleTableSession(data: TableSessionDto) {
-    const tableId = data.tableId;
+  public async handleTableSession(data: TableSessionInput) {
+    const tableId =
+      typeof data.tableId === 'number'
+        ? data.tableId
+        : await this.resolveInternalIdOrThrow(data.tableId);
     const tableStatus = data.status;
-    const { status, guestCount = 0, ...tableSessionData } = data;
+    const guestCount = data.guestCount ?? 0;
+    const tableSessionData = data.notes ? { notes: data.notes } : {};
 
     const table = await this.findTableOrThrow(tableId);
 
     // Validate guest count against table capacity
-    if (data.guestCount !== undefined && data.guestCount !== null && data.guestCount > table!.capacity) {
+    if (
+      data.guestCount !== undefined &&
+      data.guestCount !== null &&
+      data.guestCount > table!.capacity
+    ) {
       throwBadRequestException(
-        `Guest count (${data.guestCount}) exceeds table capacity (${table!.capacity})`
+        `Guest count (${data.guestCount}) exceeds table capacity (${table!.capacity})`,
       );
     }
 
-    if ((data.guestCount == undefined || data.guestCount == null) && tableStatus == "OCCUPIED") {
-      throwBadRequestException(
-        `Guest count should not be empty.`
-      );
+    if (
+      (data.guestCount == undefined || data.guestCount == null) &&
+      tableStatus == 'OCCUPIED'
+    ) {
+      throwBadRequestException(`Guest count should not be empty.`);
     }
 
     const existingSession = await this.prisma.tableSession.findFirst({
@@ -245,15 +314,27 @@ export class TableService {
       },
     });
 
-    const sessionStatus = (tableStatus == "AVAILABLE" && table?.tableStatus == "RESERVED") ? SessionStatus.CANCELLED : ((tableStatus == "OCCUPIED" || tableStatus == "RESERVED") ? SessionStatus.ACTIVE : (tableStatus == "CLEANING") ? SessionStatus.CLOSED : undefined);
+    const sessionStatus =
+      tableStatus == 'AVAILABLE' && table?.tableStatus == 'RESERVED'
+        ? SessionStatus.CANCELLED
+        : tableStatus == 'OCCUPIED' || tableStatus == 'RESERVED'
+          ? SessionStatus.ACTIVE
+          : tableStatus == 'CLEANING'
+            ? SessionStatus.CLOSED
+            : undefined;
 
-    if (existingSession && (tableStatus == "OCCUPIED" || tableStatus == "RESERVED" || sessionStatus == undefined)) {
+    if (
+      existingSession &&
+      (tableStatus == 'OCCUPIED' ||
+        tableStatus == 'RESERVED' ||
+        sessionStatus == undefined)
+    ) {
       throwBadRequestException(`Table is already ${table?.tableStatus}`);
     }
 
     // For CLEANING status: validate no active orders AND no unpaid bills,
     // then perform all updates atomically within a transaction.
-    if (existingSession && tableStatus == "CLEANING") {
+    if (existingSession && tableStatus == 'CLEANING') {
       // Validate no active orders exist on this table
       const existingOrder = await this.prisma.order.findFirst({
         where: {
@@ -265,19 +346,24 @@ export class TableService {
       });
 
       if (existingOrder) {
-        throwBadRequestException(`Cannot set table to ${tableStatus}. Active orders exist.`);
+        throwBadRequestException(
+          `Cannot set table to ${tableStatus}. Active orders exist.`,
+        );
       }
 
       // For POD/HALL time-rate tables without an order, enforce that a bill
       // has been generated (prevents skipping billing for time-only charges).
-      if (!existingOrder && (table?.type === TableType.POD || table?.type === TableType.HALL)) {
+      if (
+        !existingOrder &&
+        (table?.type === TableType.POD || table?.type === TableType.HALL)
+      ) {
         const anyBill = await this.prisma.billing.findFirst({
           where: { sessionId: existingSession.id },
         });
 
         if (!anyBill) {
           throwBadRequestException(
-            `Cannot close table. A bill must be generated first for ${table?.type} tables.`
+            `Cannot close table. A bill must be generated first for ${table?.type} tables.`,
           );
         }
       }
@@ -294,12 +380,15 @@ export class TableService {
 
       if (unpaidBill) {
         throwBadRequestException(
-          `Cannot close table. Unpaid bill (${unpaidBill.billNumber}) exists. Please complete payment first.`
+          `Cannot close table. Unpaid bill (${unpaidBill.billNumber}) exists. Please complete payment first.`,
         );
       }
 
       // Perform all updates atomically
-      const enableTimeRate = !table?.rushMode && table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
+      const enableTimeRate =
+        !table?.rushMode &&
+        table?.enableTimeRate &&
+        (table.type === 'POD' || table.type === 'HALL');
       const billing = this.calculateTimeCharge(existingSession);
 
       await this.prisma.$transaction(async (tx) => {
@@ -311,8 +400,12 @@ export class TableService {
             status: SessionStatus.CLOSED,
             endedAt: new Date(),
             timerEndedAt: enableTimeRate ? new Date() : null,
-            totalMinutes: (enableTimeRate && billing?.totalMinutes !== 0) ? billing?.totalMinutes : null,
-            timeChargeAmount: (enableTimeRate && billing?.amount !== 0) ? billing?.amount : null,
+            totalMinutes:
+              enableTimeRate && billing?.totalMinutes !== 0
+                ? billing?.totalMinutes
+                : null,
+            timeChargeAmount:
+              enableTimeRate && billing?.amount !== 0 ? billing?.amount : null,
           },
         });
 
@@ -326,10 +419,9 @@ export class TableService {
         });
       });
 
-      return this.response(
-        `Table cleaning successfully`,
-        { status: tableStatus }
-      );
+      return this.response(`Table cleaning successfully`, {
+        status: tableStatus,
+      });
     }
 
     // For CANCELLED status: validate and update atomically
@@ -359,28 +451,26 @@ export class TableService {
         });
       });
 
-      return this.response(
-        `Session cancelled successfully`,
-        { status: "AVAILABLE" }
-      );
+      return this.response(`Session cancelled successfully`, {
+        status: 'AVAILABLE',
+      });
     }
 
     // For AVAILABLE status: simply update the table (no session changes needed)
-    if (tableStatus == "AVAILABLE") {
+    if (tableStatus == 'AVAILABLE') {
       await this.prisma.restaurantTable.update({
         where: { id: tableId },
         data: { tableStatus: TableStatus.AVAILABLE },
       });
 
-      return this.response(
-        `Table is now available`,
-        { status: "AVAILABLE" }
-      );
+      return this.response(`Table is now available`, { status: 'AVAILABLE' });
     }
 
     // For new session creation (OCCUPIED/RESERVED): perform atomically
-    if (tableStatus == "OCCUPIED" || tableStatus == "RESERVED") {
-      const enableTimeRate = table?.enableTimeRate && (table.type === 'POD' || table.type === 'HALL');
+    if (tableStatus == 'OCCUPIED' || tableStatus == 'RESERVED') {
+      const enableTimeRate =
+        table?.enableTimeRate &&
+        (table.type === 'POD' || table.type === 'HALL');
 
       await this.prisma.$transaction(async (tx) => {
         await tx.restaurantTable.update({
@@ -394,6 +484,7 @@ export class TableService {
         await tx.tableSession.create({
           data: {
             ...tableSessionData,
+            tableId: tableId,
             guestCount: guestCount,
             status: SessionStatus.ACTIVE,
             startedAt: new Date(),
@@ -407,22 +498,24 @@ export class TableService {
         });
       });
 
-      return this.response(
-        `Table ${tableStatus} successfully`,
-        { status: tableStatus }
-      );
+      return this.response(`Table ${tableStatus} successfully`, {
+        status: tableStatus,
+      });
     }
 
-    return this.response(
-      `Table status updated to ${tableStatus}`,
-      { status: tableStatus }
-    );
+    return this.response(`Table status updated to ${tableStatus}`, {
+      status: tableStatus,
+    });
   }
 
-  public async getLiveCharge(tableId: number) {
+  public async getLiveCharge(tableId: TableIdInput) {
+    const internalId =
+      typeof tableId === 'number'
+        ? tableId
+        : await this.resolveInternalIdOrThrow(tableId);
     const session = await this.prisma.tableSession.findFirst({
       where: {
-        tableId: tableId,
+        tableId: internalId,
         status: SessionStatus.ACTIVE,
       },
     });
@@ -435,20 +528,20 @@ export class TableService {
     };
   }
 
-  public async delete(id: number) {
-    await this.findTableOrThrow(id);
+  public async delete(tableId: string, updatedById?: number) {
+    const internalId = await this.resolveInternalIdOrThrow(tableId);
+    await this.findTableOrThrow(internalId);
 
     await this.prisma.restaurantTable.update({
-      where: { id },
+      where: { id: internalId },
       data: {
         deletedAt: new Date(),
+        updatedBy: updatedById ?? null,
       },
     });
 
-    return this.response(
-      'Table deleted successfully',
-    );
+    return this.response('Table deleted successfully');
   }
 
-  private generateQrToken = () => crypto.randomBytes(8).toString("hex");
+  private generateQrToken = () => randomBytes(8).toString('hex');
 }

@@ -119,6 +119,7 @@ export class SeedService {
                     await this.prisma.restaurantTable.create({
                         data: {
                             ...table,
+                            tableId: randomUUID(),
                             tableStatus: "AVAILABLE",
                             isActive: true,
                         },

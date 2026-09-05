@@ -1,13 +1,28 @@
 import { Type } from 'class-transformer';
-import { ArrayUnique, IsArray, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf, ValidateNested} from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { PaymentMethod } from 'generated/prisma/client';
 
 /** A single discount applied to a bill, with its application order. */
 export class ApplyDiscountDto {
-  /** The ID of the discount master record. */
+  /** The public UUID of the discount master record. */
   @IsNotEmpty()
-  @IsInt()
-  discountId!: number;
+  @IsString()
+  @IsUUID()
+  discountId!: string;
 
   /** The order in which this discount is applied (1-based). */
   @IsNotEmpty()
@@ -18,10 +33,11 @@ export class ApplyDiscountDto {
 
 /** DTO for generating a bill for a table. */
 export class GenerateBillDto {
-  /** The ID of the table to generate a bill for. */
+  /** The public UUID of the table to generate a bill for. */
   @IsNotEmpty()
-  @IsInt()
-  tableId!: number;
+  @IsString()
+  @IsUUID()
+  tableId!: string;
 
   /** Optional mobile number to include on the bill. */
   @IsOptional()
@@ -45,10 +61,11 @@ export class GenerateBillDto {
 
 /** DTO for marking a bill as paid. */
 export class PayBillDto {
-  /** The ID of the billing record to mark as paid. */
+  /** The public UUID of the billing record to mark as paid. */
   @IsNotEmpty()
-  @IsInt()
-  billingId!: number;
+  @IsString()
+  @IsUUID()
+  billingId!: string;
 
   /** The payment method used (CASH, UPI, CARD, or CASH_ONLINE). */
   @IsNotEmpty()

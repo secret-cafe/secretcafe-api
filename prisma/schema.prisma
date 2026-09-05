@@ -372,6 +372,7 @@ model OrderStatusHistory {
 
 model Billing {
   id                Int            @id @default(autoincrement()) @db.UnsignedInt
+  billingId         String?        @unique @db.VarChar(36)
   sessionId         Int            @db.UnsignedInt
   orderId           Int?           @db.UnsignedInt
   billNumber        String         @unique @db.VarChar(50)
@@ -389,6 +390,7 @@ model Billing {
   mobileNumber      String?        @db.VarChar(20)
   notes             String?        @db.Text
   createdBy         Int?           @db.UnsignedInt
+  updatedBy         Int?           @db.UnsignedInt
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -399,10 +401,12 @@ model Billing {
 
   @@index([sessionId])
   @@index([paymentStatus])
+  @@index([billingId])
 }
 
 model Discount {
   id          Int          @id @default(autoincrement()) @db.UnsignedInt
+  discountId  String?      @unique @db.VarChar(36)
   name        String       @db.VarChar(255)
   description String?      @db.VarChar(5000)
   type        DiscountType
@@ -418,6 +422,7 @@ model Discount {
   billingDiscounts BillingDiscount[]
 
   @@index([deletedAt])
+  @@index([discountId])
 }
 
 model BillingDiscount {

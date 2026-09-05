@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   throwBadRequestException,
   throwNotFoundException,
 } from 'src/common/utils/http-exception.helper';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
+import { QueryBillingDto } from './dto/query-billing.dto';
+import { BillingWithRelations, billingInclude } from './billing.types';
 import {
   Prisma,
   SessionStatus,
@@ -26,6 +29,146 @@ export class BillingService {
     private readonly tableService: TableService,
   ) {}
 
+  /** Shared relation include for bill queries (defined once in billing.types). */
+  private readonly billingInclude = billingInclude;
+
+  /**
+   * Resolves the public table UUID into the internal numeric table id.
+   * Reused by generateBill and getBillByTable; centralizes the table lookup.
+   */
+  private async resolveTableIdOrThrow(tableId: string): Promise<number> {
+    const table = await this.prisma.restaurantTable.findFirst({
+      where: { tableId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!table) {
+      throwNotFoundException(`Table with ID ${tableId} not found.`);
+    }
+    return table!.id;
+  }
+
+  /**
+   * Validates that all non-cancelled items in an order are SERVED.
+   * Throws if any item is pending.
+   */
+  private validateAllItemsServed(order: any) {
+    if (!order) return;
+
+    const nonServedItems = order.items.filter(
+      (item: any) => item.status !== OrderStatus.SERVED,
+    );
+    if (nonServedItems.length > 0) {
+      const names = nonServedItems
+        .map((i: any) => `Item #${i.id} (status: ${i.status})`)
+        .join(', ');
+      throwBadRequestException(
+        `All items must be served first. Pending: ${names}`,
+      );
+    }
+  }
+
+  /**
+   * Sums the total price of all non-cancelled items (and their sub-items).
+   */
+  private calculateItemSubtotal(order: any): Prisma.Decimal {
+    let subtotal = new Prisma.Decimal(0);
+    if (!order) return subtotal;
+
+    for (const item of order.items) {
+      subtotal = subtotal.add(item.totalPrice);
+      for (const sub of item.orderSubMenuItem) {
+        subtotal = subtotal.add(sub.totalPrice);
+      }
+    }
+    return subtotal;
+  }
+
+  /**
+   * Applies the time-based charge for POD / HALL sessions when time rate is enabled
+   * and rush mode is off. Returns null when no time charge applies.
+   */
+  private calculateTimeCharge(session: any): Prisma.Decimal | null {
+    let timeCharge: Prisma.Decimal | null = null;
+
+    if (session?.rushMode) return null;
+
+    const tableType = session?.table?.type;
+    const isTimeRateTable =
+      tableType === TableType.POD || tableType === TableType.HALL;
+    if (!isTimeRateTable || !session.enableTimeRate) return null;
+
+    const startTime = session.timerStartedAt ?? session.startedAt;
+    if (!startTime) {
+      throwBadRequestException(
+        'Timer not started for this session. Cannot calculate time charge.',
+      );
+      return null;
+    }
+
+    const end = new Date();
+    const elapsedMinutes = Math.ceil(
+      (end.getTime() - startTime.getTime()) / (1000 * 60),
+    );
+    const multiplier = session.chargePerPerson ? session.guestCount : 1;
+
+    // HALL tables: use ratePerHour if available
+    if (session.ratePerHour) {
+      const elapsedHours = elapsedMinutes / 60;
+      timeCharge = new Prisma.Decimal(
+        Number(session.ratePerHour) * elapsedHours * multiplier,
+      );
+    } else if (session.ratePerMinute) {
+      // POD / default: use ratePerMinute
+      timeCharge = new Prisma.Decimal(
+        Number(session.ratePerMinute) * elapsedMinutes * multiplier,
+      );
+    }
+
+    return timeCharge;
+  }
+
+  /**
+   * Resolves requested discounts (by public UUID) into internal discount records.
+   * Only active, non-deleted discounts are accepted; values are never trusted
+   * from the frontend.
+   */
+  private async resolveDiscounts(
+    requestedDiscounts: { discountId: string; sequence: number }[],
+    itemSubtotal: Prisma.Decimal,
+  ) {
+    const discountIds = requestedDiscounts.map((d) => d.discountId);
+
+    const fetchedDiscounts = await this.prisma.discount.findMany({
+      where: { discountId: { in: discountIds }, deletedAt: null, isActive: true },
+      select: { id: true, discountId: true, type: true, value: true },
+    });
+
+    if (fetchedDiscounts.length !== discountIds.length) {
+      throwBadRequestException(
+        'One or more discounts are invalid, inactive, or deleted.',
+      );
+      return null;
+    }
+
+    const discountMap = new Map(
+      fetchedDiscounts.map((d) => [d.discountId, d]),
+    );
+
+    return calculateDiscounts(
+      itemSubtotal,
+      requestedDiscounts.map((d) => {
+        const discount = discountMap.get(d.discountId)!;
+        return {
+          discountId: discount.id,
+          type: discount.type,
+          value: discount.value,
+          sequence: d.sequence,
+        };
+      }),
+    );
+  }
+
   /**
    * Generates a bill for a table.
    *
@@ -34,13 +177,14 @@ export class BillingService {
    * (elapsed minutes × ratePerMinute). If an order exists, validates items are SERVED
    * and adds item subtotal to the total.
    *
-   * @param dto - Payload with tableId, optional mobileNumber and notes.
+   * @param dto - Payload with tableId (UUID), optional mobileNumber and notes.
    * @param userId - The ID of the user generating the bill (optional).
    */
   public async generateBill(dto: GenerateBillDto, userId?: number) {
-    const { tableId, mobileNumber, notes, discounts: requestedDiscounts } = dto;
+    const { mobileNumber, notes, discounts: requestedDiscounts } = dto;
 
-    // 1. Find active session for this table
+    // 1. Resolve public table UUID into internal numeric table id and find active session
+    const tableId = await this.resolveTableIdOrThrow(dto.tableId);
     const session = await this.prisma.tableSession.findFirst({
       where: { tableId, status: SessionStatus.ACTIVE },
       include: {
@@ -49,9 +193,6 @@ export class BillingService {
             id: true,
             name: true,
             type: true,
-            enableTimeRate: true,
-            ratePerMinute: true,
-            chargePerPerson: true,
           },
         },
       },
@@ -106,77 +247,17 @@ export class BillingService {
         );
         return;
       }
-
-      const nonServedItems = order.items.filter(
-        (item) => item.status !== OrderStatus.SERVED,
-      );
-      if (nonServedItems.length > 0) {
-        const names = nonServedItems
-          .map((i) => `Item #${i.id} (status: ${i.status})`)
-          .join(', ');
-        throwBadRequestException(
-          `All items must be served first. Pending: ${names}`,
-        );
-        return;
-      }
+      this.validateAllItemsServed(order);
     } else if (isTimeRateTable && order) {
       // POD/HALL: if an order exists, validate items are served
-      const nonServedItems = order.items.filter(
-        (item) => item.status !== OrderStatus.SERVED,
-      );
-      if (nonServedItems.length > 0) {
-        const names = nonServedItems
-          .map((i) => `Item #${i.id} (status: ${i.status})`)
-          .join(', ');
-        throwBadRequestException(
-          `All items must be served first. Pending: ${names}`,
-        );
-        return;
-      }
+      this.validateAllItemsServed(order);
     }
 
     // 5. Calculate item subtotal (if order exists)
-    let itemSubtotal = new Prisma.Decimal(0);
-    if (order) {
-      for (const item of order.items) {
-        itemSubtotal = itemSubtotal.add(item.totalPrice);
-        for (const sub of item.orderSubMenuItem) {
-          itemSubtotal = itemSubtotal.add(sub.totalPrice);
-        }
-      }
-    }
+    const itemSubtotal = this.calculateItemSubtotal(order);
 
-    // 6. Calculate time charge (POD / HALL with time rate enabled)
-    //    Skip time-based and per-person charges when rushMode is active.
-    let timeChargeAmount: Prisma.Decimal | null = null;
-
-    if (!session.rushMode && isTimeRateTable && session.enableTimeRate) {
-      const startTime = session.timerStartedAt ?? session.startedAt;
-      if (!startTime) {
-        throwBadRequestException(
-          'Timer not started for this session. Cannot calculate time charge.',
-        );
-        return;
-      }
-      const end = new Date();
-      const elapsedMinutes = Math.ceil(
-        (end.getTime() - startTime.getTime()) / (1000 * 60),
-      );
-      const multiplier = session.chargePerPerson ? session.guestCount : 1;
-
-      // HALL tables: use ratePerHour if available
-      if (session.ratePerHour) {
-        const elapsedHours = elapsedMinutes / 60;
-        timeChargeAmount = new Prisma.Decimal(
-          Number(session.ratePerHour) * elapsedHours * multiplier,
-        );
-      } else if (session.ratePerMinute) {
-        // POD / default: use ratePerMinute
-        timeChargeAmount = new Prisma.Decimal(
-          Number(session.ratePerMinute) * elapsedMinutes * multiplier,
-        );
-      }
-    }
+    // 6. Calculate time charge (POD / HALL with time rate enabled; skipped in rush mode)
+    const timeChargeAmount = this.calculateTimeCharge(session);
 
     // 7. Apply discounts against the item subtotal only (if any requested)
     let discountAmount = new Prisma.Decimal(0);
@@ -189,46 +270,15 @@ export class BillingService {
     }[] = [];
 
     if (requestedDiscounts && requestedDiscounts.length > 0) {
-      const discountIds = requestedDiscounts.map((d) => d.discountId);
-
-      // Fetch only active, non-deleted discounts. Never trust values from the frontend.
-      const fetchedDiscounts = await this.prisma.discount.findMany({
-        where: {
-          id: { in: discountIds },
-          deletedAt: null,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          type: true,
-          value: true,
-        },
-      });
-
-      if (fetchedDiscounts.length !== discountIds.length) {
-        throwBadRequestException(
-          'One or more discounts are invalid, inactive, or deleted.',
-        );
-        return;
-      }
-
-      const discountMap = new Map(fetchedDiscounts.map((d) => [d.id, d]));
-
-      const calculation = calculateDiscounts(
+      const calculation = await this.resolveDiscounts(
+        requestedDiscounts,
         itemSubtotal,
-        requestedDiscounts.map((d) => {
-          const discount = discountMap.get(d.discountId)!;
-          return {
-            discountId: discount.id,
-            type: discount.type,
-            value: discount.value,
-            sequence: d.sequence,
-          };
-        }),
       );
 
-      discountAmount = calculation.totalDiscount;
-      appliedDiscounts = calculation.discounts;
+      if (calculation) {
+        discountAmount = calculation.totalDiscount;
+        appliedDiscounts = calculation.discounts;
+      }
     }
 
     // 8. Total (discount applies to item subtotal only; time charge is undiscounted)
@@ -250,6 +300,7 @@ export class BillingService {
     await this.prisma.$transaction(async (tx) => {
       const billing = await tx.billing.create({
         data: {
+          billingId: randomUUID(),
           sessionId: session.id,
           orderId: order?.id ?? null,
           billNumber,
@@ -299,19 +350,22 @@ export class BillingService {
    * Updates billing status, marks order and all non-cancelled items as COMPLETED
    * (if an order is linked), and logs the status transition.
    */
-  public async payBill(dto: PayBillDto) {
+  public async payBill(dto: PayBillDto, userId?: number) {
     const { billingId, paymentMethod, cashAmount, onlineAmount, notes } = dto;
 
     const billing = await this.prisma.billing.findUnique({
-      where: { id: billingId },
+      where: { billingId },
       select: {
         id: true,
+        billingId: true,
         orderId: true,
         billNumber: true,
         paymentStatus: true,
         totalAmount: true,
         session: {
-          select: { tableId: true },
+          select: {
+            tableId: true,
+          },
         },
       },
     });
@@ -356,6 +410,7 @@ export class BillingService {
       paymentMethod,
       paidAt: new Date(),
       notes: notes || undefined,
+      updatedBy: userId || null,
     };
 
     // Store split amounts for CASH_ONLINE
@@ -366,7 +421,7 @@ export class BillingService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.billing.update({
-        where: { id: billingId },
+        where: { id: billing.id },
         data: updateData,
       });
 
@@ -395,7 +450,10 @@ export class BillingService {
         fromStatus: OrderStatus.SERVED,
         toStatus: OrderStatus.COMPLETED,
         reason: `Payment completed (${paymentMethod})`,
-        metadata: { billingId, billNumber: billing.billNumber },
+        metadata: {
+          billingId: billing.billingId,
+          billNumber: billing.billNumber,
+        },
       });
     }
 
@@ -412,11 +470,12 @@ export class BillingService {
   }
 
   /**
-   * Retrieves a bill by table ID (looks up via the latest session).
+   * Retrieves a bill by table UUID (looks up via the latest session).
    */
-  public async getBillByTable(tableId: number) {
+  public async getBillByTable(tableId: string) {
+    const internalTableId = await this.resolveTableIdOrThrow(tableId);
     const session = await this.prisma.tableSession.findFirst({
-      where: { tableId },
+      where: { tableId: internalTableId },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
@@ -429,50 +488,7 @@ export class BillingService {
     const billing = await this.prisma.billing.findFirst({
       where: { sessionId: session.id },
       orderBy: { createdAt: 'asc' },
-      include: {
-        session: {
-          select: {
-            id: true,
-            tableId: true,
-            guestCount: true,
-            startedAt: true,
-            endedAt: true,
-            table: {
-              select: { id: true, name: true, type: true },
-            },
-          },
-        },
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            items: {
-              where: { isCancelled: false },
-              include: {
-                menuItem: {
-                  select: { id: true, name: true, price: true },
-                },
-                orderSubMenuItem: {
-                  where: { isCancelled: false },
-                  include: {
-                    subMenuItem: {
-                      select: { id: true, name: true, price: true },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        billingDiscounts: {
-          orderBy: { sequence: 'asc' },
-          include: {
-            discount: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
+      include: this.billingInclude,
     });
 
     if (!billing) {
@@ -490,74 +506,31 @@ export class BillingService {
   /**
    * Retrieves all bills, ordered by most recent first.
    */
-  public async getAllBills() {
-    const bills = await this.prisma.billing.findMany({
-      orderBy: { createdAt: 'asc' },
-      include: {
-        session: {
-          select: {
-            id: true,
-            tableId: true,
-            guestCount: true,
-            table: {
-              select: {
-                id: true,
-                name: true,
-                type: true,
-              },
-            },
-          },
-        },
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            items: {
-              select: {
-                id: true,
-                status: true,
-                quantity: true,
-                unitPrice: true,
-                totalPrice: true,
-                notes: true,
-                isCancelled: true,
-                menuItem: {
-                  select: {
-                    name: true,
-                  },
-                },
-                orderSubMenuItem: {
-                  select: {
-                    id: true,
-                    quantity: true,
-                    unitPrice: true,
-                    totalPrice: true,
-                    notes: true,
-                    isCancelled: true,
-                    subMenuItem: {
-                      select: { name: true },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        billingDiscounts: {
-          orderBy: { sequence: 'asc' },
-          include: {
-            discount: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
-    });
+  public async getAllBills(query: QueryBillingDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const [bills, total] = await this.prisma.$transaction([
+      this.prisma.billing.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'asc' },
+        include: this.billingInclude,
+      }),
+      this.prisma.billing.count(),
+    ]);
 
     return {
       status: true,
       message: 'Bills fetched successfully.',
       data: bills.map((bill) => this.transformBillResponse(bill)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -590,12 +563,12 @@ export class BillingService {
   /**
    * Transforms a raw billing record into a structured response format.
    */
-  private transformBillResponse(billing: any): any {
+  private transformBillResponse(billing: BillingWithRelations): any {
     return {
-      billingId: billing.id,
+      billingId: billing.billingId,
       billNumber: billing.billNumber,
-      sessionId: billing.sessionId,
-      orderId: billing.orderId,
+      tableId: billing.session.table?.tableId ?? null,
+      orderId: billing.order?.orderId ?? null,
       subtotal: billing.subtotal,
       taxAmount: billing.taxAmount,
       discountAmount: billing.discountAmount,
@@ -613,7 +586,7 @@ export class BillingService {
       totalDiscount: billing.discountAmount,
       discounts: billing.billingDiscounts
         ? billing.billingDiscounts.map((d: any) => ({
-            discountId: d.discountId,
+            discountId: d.discount?.discountId ?? null,
             discountName: d.discount?.name,
             discountType: d.discountType,
             discountValue: d.discountValue,
@@ -623,8 +596,7 @@ export class BillingService {
         : [],
       session: billing.session
         ? {
-            tableSessionId: billing.session.id,
-            tableId: billing.session.tableId,
+            tableId: billing.session.table?.tableId ?? null,
             tableName: billing.session.table?.name,
             tableType: billing.session.table?.type,
             guestCount: billing.session.guestCount,
@@ -632,11 +604,11 @@ export class BillingService {
         : null,
       order: billing.order
         ? {
-            orderId: billing.order.id,
+            orderId: billing.order.orderId,
             orderNumber: billing.order.orderNumber,
             items: billing.order.items
               ? billing.order.items.map((item: any) => ({
-                  orderItemId: item.id,
+                  orderItemId: item.orderItemId,
                   menuItemName: item.menuItem?.name,
                   unitPrice: item.unitPrice,
                   totalPrice: item.totalPrice,
@@ -644,7 +616,7 @@ export class BillingService {
                   notes: item.notes,
                   isCancelled: item.isCancelled,
                   subMenuItems: item.orderSubMenuItem?.map((sub: any) => ({
-                    orderSubMenuItemId: sub.id,
+                    orderSubMenuItemId: sub.orderSubMenuItemId,
                     subMenuItemName: sub.subMenuItem?.name,
                     unitPrice: sub.unitPrice,
                     totalPrice: sub.totalPrice,

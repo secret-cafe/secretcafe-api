@@ -3,35 +3,46 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDiscountDto } from './dto/create-discount.dto';
 import { UpdateDiscountDto } from './dto/update-discount.dto';
 import { ToggleDiscountDto } from './dto/toggle-discount.dto';
+import { QueryDiscountDto } from './dto/query-discount.dto';
 import {
   throwBadRequestException,
   throwNotFoundException,
 } from 'src/common/utils/http-exception.helper';
 import { Prisma, DiscountType } from 'generated/prisma/client';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class DiscountService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private readonly discountSelect = {
-    id: true,
+    discountId: true,
     name: true,
     description: true,
     type: true,
     value: true,
     isActive: true,
     createdAt: true,
-    updatedAt: true,
   } satisfies Prisma.DiscountSelect;
 
-  private async findDiscountOrThrow(id: number) {
+  /**
+   * Keep the response key `id` but its value is the UUID `discountId`.
+   * The internal numeric auto-increment `id` is never exposed.
+   */
+  private mapDiscount(discount: any): any {
+    if (!discount) return discount;
+    const { discountId, ...rest } = discount;
+    return { id: discountId, ...rest };
+  }
+
+  private async findDiscountOrThrow(discountId: string) {
     const discount = await this.prisma.discount.findFirst({
-      where: { id, deletedAt: null },
+      where: { discountId, deletedAt: null },
       select: this.discountSelect,
     });
 
     if (!discount) throwNotFoundException('Discount not found');
-    return discount;
+    return discount!;
   }
 
   private validateValue(type: DiscountType, value: number) {
@@ -46,27 +57,52 @@ export class DiscountService {
     }
   }
 
-  async findAll() {
-    const discounts = await this.prisma.discount.findMany({
-      where: { deletedAt: null },
-      select: this.discountSelect,
-      orderBy: { createdAt: 'asc' },
-    });
+  async findAll(query: QueryDiscountDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.DiscountWhereInput = {
+      deletedAt: null,
+      ...(query.search && {
+        OR: [
+          { name: { contains: query.search } },
+          { description: { contains: query.search } },
+        ],
+      }),
+    };
+
+    const [discounts, total] = await this.prisma.$transaction([
+      this.prisma.discount.findMany({
+        where,
+        select: this.discountSelect,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.discount.count({ where }),
+    ]);
 
     return {
       status: true,
       message: 'Discounts fetched successfully.',
-      data: discounts,
+      data: discounts.map((discount) => this.mapDiscount(discount)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
-  async findOne(id: number) {
-    const discount = await this.findDiscountOrThrow(id);
+  async findOne(discountId: string) {
+    const discount = await this.findDiscountOrThrow(discountId);
 
     return {
       status: true,
       message: 'Discount fetched successfully.',
-      data: discount,
+      data: this.mapDiscount(discount),
     };
   }
 
@@ -77,6 +113,7 @@ export class DiscountService {
       await this.prisma.discount.create({
         data: {
           ...data,
+          discountId: randomUUID(),
           createdBy: userId || null,
         },
       });
@@ -94,16 +131,16 @@ export class DiscountService {
     }
   }
 
-  async update(id: number, data: UpdateDiscountDto, userId?: number) {
-    await this.findDiscountOrThrow(id);
+  async update(discountId: string, data: UpdateDiscountDto, userId?: number) {
+    await this.findDiscountOrThrow(discountId);
 
     if (data.type !== undefined && data.value !== undefined) {
       this.validateValue(data.type, data.value);
     }
 
     try {
-      await this.prisma.discount.update({ 
-        where: { id },
+      await this.prisma.discount.updateMany({
+        where: { discountId, deletedAt: null },
         data: {
           ...data,
           updatedBy: userId || null,
@@ -123,12 +160,12 @@ export class DiscountService {
     }
   }
 
-  async toggle(id: number, data: ToggleDiscountDto, userId?: number) {
-    await this.findDiscountOrThrow(id);
+  async toggle(discountId: string, data: ToggleDiscountDto, userId?: number) {
+    await this.findDiscountOrThrow(discountId);
 
     try {
-      await this.prisma.discount.update({
-        where: { id },
+      await this.prisma.discount.updateMany({
+        where: { discountId, deletedAt: null },
         data: {
           isActive: data.isActive,
           updatedBy: userId || null,
@@ -150,16 +187,16 @@ export class DiscountService {
     }
   }
 
-  async delete(id: number) {
-    await this.findDiscountOrThrow(id);
+  async delete(discountId: string, userId?: number) {
+    await this.findDiscountOrThrow(discountId);
 
     try {
-      await this.prisma.discount.update({
-        where: { id },
+      await this.prisma.discount.updateMany({
+        where: { discountId, deletedAt: null },
         data: {
           deletedAt: new Date(),
           isActive: false,
-          updatedBy: null,
+          updatedBy: userId || null,
         },
       });
 

@@ -3,12 +3,14 @@ import {
   Controller,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { GenerateBillDto, PayBillDto } from './dto/billing.dto';
+import { QueryBillingDto } from './dto/query-billing.dto';
 import { Role } from 'src/common/constants/constants';
 import { Auth } from 'src/common/decorators/auth.decorator';
 import type { Request } from 'express';
@@ -35,8 +37,9 @@ export class BillingController {
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Post('pay')
-  public payBill(@Body() dto: PayBillDto) {
-    return this.billingService.payBill(dto);
+  public payBill(@Body() dto: PayBillDto, @Req() req: Request) {
+    const userId = (req as any).user?.sub;
+    return this.billingService.payBill(dto, userId);
   }
 
   /**
@@ -44,7 +47,7 @@ export class BillingController {
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Get('table/:tableId')
-  public getBillByTable(@Param('tableId', ParseIntPipe) tableId: number) {
+  public getBillByTable(@Param('tableId', ParseUUIDPipe) tableId: string) {
     return this.billingService.getBillByTable(tableId);
   }
 
@@ -53,7 +56,7 @@ export class BillingController {
    */
   @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.WAITER)
   @Get()
-  public getAllBills() {
-    return this.billingService.getAllBills();
+  public getAllBills(@Query() query: QueryBillingDto) {
+    return this.billingService.getAllBills(query);
   }
 }

@@ -4,9 +4,10 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { Role } from 'src/common/constants/constants';
@@ -15,6 +16,7 @@ import { DiscountService } from './discount.service';
 import { CreateDiscountDto } from './dto/create-discount.dto';
 import { UpdateDiscountDto } from './dto/update-discount.dto';
 import { ToggleDiscountDto } from './dto/toggle-discount.dto';
+import { QueryDiscountDto } from './dto/query-discount.dto';
 import type { Request } from 'express';
 
 @Controller('discount')
@@ -29,37 +31,41 @@ export class DiscountController {
   }
 
   @Get()
-  findAll() {
-    return this.discountService.findAll();
+  findAll(@Query() query: QueryDiscountDto) {
+    return this.discountService.findAll(query);
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.discountService.findOne(id);
+  @Get(':discountId')
+  findOne(@Param('discountId', ParseUUIDPipe) discountId: string) {
+    return this.discountService.findOne(discountId);
   }
 
-  @Patch(':id')
+  @Patch(':discountId')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('discountId', ParseUUIDPipe) discountId: string,
     @Body() dto: UpdateDiscountDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.sub;
-    return this.discountService.update(id, dto, userId);
+    return this.discountService.update(discountId, dto, userId);
   }
 
-  @Patch(':id/activate')
+  @Patch(':discountId/activate')
   toggle(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('discountId', ParseUUIDPipe) discountId: string,
     @Body() dto: ToggleDiscountDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.sub;
-    return this.discountService.toggle(id, dto, userId);
+    return this.discountService.toggle(discountId, dto, userId);
   }
 
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.discountService.delete(id);
+  @Delete(':discountId')
+  remove(
+    @Param('discountId', ParseUUIDPipe) discountId: string,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user?.sub;
+    return this.discountService.delete(discountId, userId);
   }
 }

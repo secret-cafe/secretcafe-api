@@ -233,16 +233,12 @@ export class MenuService {
             status: true,
             message: 'Menu fetched successfully',
             data: menus.map((menu) => this.transformToLegacyFormat(menu)),
-            ...(ignorePagination
-                ? {}
-                : {
-                    pagination: {
-                        page,
-                        limit,
-                        total,
-                        totalPages: Math.ceil(total / limit),
-                    },
-                }),
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
         };
     }
 

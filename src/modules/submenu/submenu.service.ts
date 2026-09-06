@@ -98,16 +98,12 @@ export class SubmenuService {
       status: true,
       message: 'Sub menu items fetched successfully.',
       data: items.map((item) => this.mapSubMenu(item)),
-      ...(ignorePagination
-        ? {}
-        : {
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-          },
-        }),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

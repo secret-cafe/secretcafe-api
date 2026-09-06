@@ -4,6 +4,7 @@ import { CategoryService } from '../category/category.service';
 import { TableService } from '../table/table.service';
 import { QueryCategoryDto } from '../category/dto/query-category.dto';
 import { TableSessionDto } from '../table/dto/table-session.dto';
+import { QueryMenuDto } from '../menu/dto/query-menu.dto';
 
 @Controller('customer')
 export class CustomerController {
@@ -19,8 +20,8 @@ export class CustomerController {
     }
 
     @Get('menu')
-    getMenu() {
-        return this.menuService.findAll();
+    getMenu(@Query() query: QueryMenuDto) {
+        return this.menuService.findAll(query);
     }
 
     @Get('menu/category/:id')

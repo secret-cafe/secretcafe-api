@@ -3,7 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDiscountDto } from './dto/create-discount.dto';
 import { UpdateDiscountDto } from './dto/update-discount.dto';
 import { ToggleDiscountDto } from './dto/toggle-discount.dto';
-import { QueryDiscountDto } from './dto/query-discount.dto';
+import { DiscountStatus, QueryDiscountDto } from './dto/query-discount.dto';
 import {
   throwBadRequestException,
   throwNotFoundException,
@@ -61,6 +61,8 @@ export class DiscountService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
+    const status = query?.status;
+    const ignorePagination = status === DiscountStatus.ALL;
 
     const where: Prisma.DiscountWhereInput = {
       deletedAt: null,
@@ -70,6 +72,9 @@ export class DiscountService {
           { description: { contains: query.search } },
         ],
       }),
+      ...((status === DiscountStatus.ACTIVE || status === DiscountStatus.INACTIVE) && {
+        isActive: status === DiscountStatus.ACTIVE,
+      }),
     };
 
     const [discounts, total] = await this.prisma.$transaction([
@@ -77,8 +82,7 @@ export class DiscountService {
         where,
         select: this.discountSelect,
         orderBy: { createdAt: 'asc' },
-        skip,
-        take: limit,
+        ...(ignorePagination ? {} : { skip, take: limit }),
       }),
       this.prisma.discount.count({ where }),
     ]);

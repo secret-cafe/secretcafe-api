@@ -89,16 +89,12 @@ export class CategoryService {
       status: true,
       message: 'Categories fetched successfully',
       data: categories.map((category) => this.mapCategory(category)),
-      ...(ignorePagination
-        ? {}
-        : {
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages: Math.ceil(total / limit),
-            },
-          }),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

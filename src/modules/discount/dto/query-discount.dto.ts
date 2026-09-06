@@ -1,5 +1,11 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export enum DiscountStatus {
+  ALL = 'all',
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+}
 
 /** Query DTO for paginated discount listing. */
 export class QueryDiscountDto {
@@ -18,4 +24,8 @@ export class QueryDiscountDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(DiscountStatus)
+  status?: DiscountStatus;
 }

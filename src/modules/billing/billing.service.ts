@@ -511,14 +511,19 @@ export class BillingService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
+    const where: Prisma.BillingWhereInput = {
+      ...(query.status && { paymentStatus: query.status }),
+    };
+
     const [bills, total] = await this.prisma.$transaction([
       this.prisma.billing.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'asc' },
         include: this.billingInclude,
       }),
-      this.prisma.billing.count(),
+      this.prisma.billing.count({ where }),
     ]);
 
     return {

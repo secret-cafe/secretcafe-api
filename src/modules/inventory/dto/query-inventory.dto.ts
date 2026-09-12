@@ -1,5 +1,11 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+
+export enum InventoryStatus {
+  LOW = 'low',
+  OUT = 'out',
+  INACTIVE = 'inactive',
+}
 
 export class QueryInventoryDto {
   @IsOptional()
@@ -22,4 +28,8 @@ export class QueryInventoryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   lowStock?: boolean;
+
+  @IsOptional()
+  @IsEnum(InventoryStatus)
+  status?: InventoryStatus;
 }

@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
-import { QueryInventoryDto } from './dto/query-inventory.dto';
+import { InventoryStatus, QueryInventoryDto } from './dto/query-inventory.dto';
 import {
   throwBadRequestException,
   throwNotFoundException,
@@ -124,6 +124,15 @@ export class InventoryService {
       }),
       ...(query.lowStock !== undefined && {
         quantity: { lte: this.prisma.inventoryItem.fields.lowStockThreshold },
+      }),
+      ...(query.status === InventoryStatus.LOW && {
+        quantity: { lte: this.prisma.inventoryItem.fields.lowStockThreshold },
+      }),
+      ...(query.status === InventoryStatus.OUT && {
+        quantity: { lte: 0 },
+      }),
+      ...(query.status === InventoryStatus.INACTIVE && {
+        isActive: false,
       }),
     };
 

@@ -1,5 +1,6 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+import { OrderStatus, OrderType } from 'generated/prisma/client';
 
 export class QueryOrderDto {
   @IsOptional()
@@ -17,4 +18,12 @@ export class QueryOrderDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @IsOptional()
+  @IsEnum(OrderType)
+  orderType?: OrderType;
 }

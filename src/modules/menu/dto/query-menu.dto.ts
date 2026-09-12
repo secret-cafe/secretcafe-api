@@ -27,4 +27,8 @@ export class QueryMenuDto {
   @IsOptional()
   @IsEnum(MenuStatus)
   status?: MenuStatus;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 }

@@ -162,6 +162,7 @@ export class TableService {
     const where: Prisma.RestaurantTableWhereInput = {
       deletedAt: null,
       ...(query.type && { type: query.type }),
+      ...(query.tableStatus && { tableStatus: query.tableStatus }),
       ...((status === _tableStatus.ACTIVE || status === _tableStatus.INACTIVE) && {
         isActive: status === _tableStatus.ACTIVE,
       }),

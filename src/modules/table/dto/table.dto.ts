@@ -11,7 +11,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
-import { TableType } from 'generated/prisma/client';
+import { TableStatus, TableType } from 'generated/prisma/client';
 import { Type } from 'class-transformer';
 
 export enum _tableStatus {
@@ -92,4 +92,8 @@ export class QueryTableDto {
   @IsOptional()
   @IsEnum(_tableStatus)
   status?: _tableStatus;
+
+  @IsOptional()
+  @IsEnum(TableStatus)
+  tableStatus?: TableStatus;
 }

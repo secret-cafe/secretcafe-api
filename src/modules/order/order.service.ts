@@ -424,6 +424,8 @@ export class OrderService {
             ...(query.search && {
                 orderNumber: { contains: query.search },
             }),
+            ...(query.status && { status: query.status }),
+            ...(query.orderType && { orderType: query.orderType }),
         };
 
         const [orders, total] = await this.prisma.$transaction([

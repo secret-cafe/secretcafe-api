@@ -17,4 +17,8 @@ export class QueryUserDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  roleId?: string;
 }

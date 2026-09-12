@@ -77,8 +77,15 @@ export class UserService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
+    let roleInternalId: number | undefined;
+    if (query.roleId) {
+      const role = await this.resolveRoleOrThrow(query.roleId);
+      roleInternalId = role.id;
+    }
+
     const where: Prisma.UserInfoWhereInput = {
       deletedAt: null,
+      ...(roleInternalId && { roleId: roleInternalId }),
       ...(query.search && {
         OR: [
           { name: { contains: query.search } },

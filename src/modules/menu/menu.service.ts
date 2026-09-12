@@ -197,12 +197,18 @@ export class MenuService {
         const status = query?.status;
         const ignorePagination = status === MenuStatus.ALL;
 
+        let categoryInternalId: number | undefined;
+        if (query?.categoryId) {
+            categoryInternalId = await this.resolveCategoryIdOrThrow(query.categoryId);
+        }
+
         const where: Prisma.MenuItemWhereInput = {
             deletedAt: null,
             category: {
                 deletedAt: null,
                 isActive: true,
             },
+            ...(categoryInternalId && { categoryId: categoryInternalId }),
             ...(query?.search && {
                 name: { contains: query.search },
             }),

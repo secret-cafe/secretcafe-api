@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MenuService } from './menu.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
+import { NotFoundException } from '@nestjs/common';
 
 describe('MenuService', () => {
   let service: MenuService;
@@ -120,6 +121,31 @@ describe('MenuService', () => {
         totalPages: 3,
       });
       expect(result.data[0].id).toBe('menu-1');
+    });
+
+    it('should filter by categoryId resolved to the internal numeric category id', async () => {
+      prisma.category.findFirst.mockResolvedValue({ id: 5 });
+      prisma.$transaction.mockImplementation((queries: any[]) => Promise.all(queries));
+      prisma.menuItem.findMany.mockResolvedValue([]);
+      prisma.menuItem.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, limit: 10, categoryId: 'cat-1' });
+
+      expect(prisma.category.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ categoryId: 'cat-1' }),
+        }),
+      );
+      const where = prisma.menuItem.findMany.mock.calls[0][0].where;
+      expect(where.categoryId).toBe(5);
+    });
+
+    it('should throw NotFoundException when categoryId does not exist', async () => {
+      prisma.category.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findAll({ page: 1, limit: 10, categoryId: 'missing' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

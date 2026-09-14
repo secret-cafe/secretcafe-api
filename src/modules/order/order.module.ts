@@ -9,7 +9,12 @@ import { OrderStatusHistoryService } from './order-status-history.service';
 @Module({
   imports: [PrismaModule],
   controllers: [OrderController],
-  providers: [OrderService, OrderValidationService, OrderItemService, OrderStatusHistoryService],
+  providers: [
+    OrderService,
+    OrderValidationService,
+    OrderItemService,
+    OrderStatusHistoryService,
+  ],
   exports: [OrderStatusHistoryService],
 })
 export class OrderModule {}

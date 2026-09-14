@@ -22,8 +22,7 @@ type UserRaw = {
 
 @Injectable()
 export class UserService {
-
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   private readonly userSelect = {
     userId: true,

@@ -4,10 +4,10 @@ import { RoleService } from './roles.service';
 @Controller('roles')
 // @Auth(Role.SUPER_ADMIN, Role.ADMIN)
 export class RoleController {
-    constructor(private readonly roleService: RoleService) {}
+  constructor(private readonly roleService: RoleService) {}
 
-    @Get()
-    getAllRoles() {
-        return this.roleService.findAll();
-    }
+  @Get()
+  getAllRoles() {
+    return this.roleService.findAll();
+  }
 }

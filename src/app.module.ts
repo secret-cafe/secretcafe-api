@@ -15,6 +15,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { SubmenuModule } from './modules/submenu/submenu.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ApplicationLogModule } from './modules/application-log/application-log.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     SubmenuModule,
     InventoryModule,
     DashboardModule,
+    ApplicationLogModule,
   ],
 })
 export class AppModule {}

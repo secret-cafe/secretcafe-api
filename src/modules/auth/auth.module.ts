@@ -12,7 +12,7 @@ import { JwtStrategy } from 'src/common/jwt/jwt.strategy';
       secret: process.env.JWT_SECRET ?? 'SUPER_SECRET_KEY',
       signOptions: { expiresIn: '1d' },
     }),
-    PrismaModule
+    PrismaModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

@@ -140,7 +140,11 @@ export class BillingService {
     const discountIds = requestedDiscounts.map((d) => d.discountId);
 
     const fetchedDiscounts = await this.prisma.discount.findMany({
-      where: { discountId: { in: discountIds }, deletedAt: null, isActive: true },
+      where: {
+        discountId: { in: discountIds },
+        deletedAt: null,
+        isActive: true,
+      },
       select: { id: true, discountId: true, type: true, value: true },
     });
 
@@ -151,9 +155,7 @@ export class BillingService {
       return null;
     }
 
-    const discountMap = new Map(
-      fetchedDiscounts.map((d) => [d.discountId, d]),
-    );
+    const discountMap = new Map(fetchedDiscounts.map((d) => [d.discountId, d]));
 
     return calculateDiscounts(
       itemSubtotal,

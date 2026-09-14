@@ -11,8 +11,10 @@ import { isNonEmptyString } from 'src/common/utils/utils';
 
 @Injectable()
 export class CategoryService {
-
-  constructor(private prisma: PrismaService, private readonly cloudinaryService: CloudinaryService) { }
+  constructor(
+    private prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   private readonly categorySelect = {
     categoryId: true,
@@ -34,7 +36,10 @@ export class CategoryService {
     return { id: categoryId, ...rest };
   }
 
-  private async findCategoryOrThrow(categoryId: string, includePublicId = false) {
+  private async findCategoryOrThrow(
+    categoryId: string,
+    includePublicId = false,
+  ) {
     const category = await this.prisma.category.findFirst({
       where: {
         categoryId,
@@ -43,7 +48,7 @@ export class CategoryService {
       select: {
         ...this.categorySelect,
         ...(includePublicId && { publicId: true }),
-      }
+      },
     });
 
     if (!category) throwNotFoundException('Category not found');
@@ -54,7 +59,7 @@ export class CategoryService {
     const category = await this.findCategoryOrThrow(categoryId, true);
 
     if (isNonEmptyString(category?.publicId)) {
-      await this.cloudinaryService.deleteFile(category?.publicId ?? "");
+      await this.cloudinaryService.deleteFile(category?.publicId ?? '');
     }
   }
 
@@ -70,7 +75,8 @@ export class CategoryService {
       ...(query?.search && {
         name: { contains: query.search },
       }),
-      ...((status === CategoryStatus.ACTIVE || status === CategoryStatus.INACTIVE) && {
+      ...((status === CategoryStatus.ACTIVE ||
+        status === CategoryStatus.INACTIVE) && {
         isActive: status === CategoryStatus.ACTIVE,
       }),
     };
@@ -133,7 +139,12 @@ export class CategoryService {
     }
   }
 
-  async update(categoryId: string, data: UpdateCategoryDto, file?: any, updatedById?: number) {
+  async update(
+    categoryId: string,
+    data: UpdateCategoryDto,
+    file?: any,
+    updatedById?: number,
+  ) {
     try {
       const updateData: any = {
         ...data,

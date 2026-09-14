@@ -9,7 +9,12 @@ export class SeedController {
   constructor(private readonly seedService: SeedService) {}
 
   @Post()
-  async seed() {
-    return this.seedService.seed();
+  public async seed() {
+    return this.seedService.seed(false);
+  }
+
+  @Post('users')
+  public async seedUsers() {
+    return this.seedService.seed(true);
   }
 }

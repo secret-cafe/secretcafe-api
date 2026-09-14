@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class DiscountService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   private readonly discountSelect = {
     discountId: true,
@@ -72,7 +72,8 @@ export class DiscountService {
           { description: { contains: query.search } },
         ],
       }),
-      ...((status === DiscountStatus.ACTIVE || status === DiscountStatus.INACTIVE) && {
+      ...((status === DiscountStatus.ACTIVE ||
+        status === DiscountStatus.INACTIVE) && {
         isActive: status === DiscountStatus.ACTIVE,
       }),
     };

@@ -1,5 +1,10 @@
 // utils/http-exception.helper.ts
-import { UnauthorizedException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  UnauthorizedException,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 
 export function throwUnauthorizedException(message = 'Invalid credentials') {
   throw new UnauthorizedException({

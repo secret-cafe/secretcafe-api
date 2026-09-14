@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { SubmenuService } from './submenu.service';
 import { CreateSubMenuItemDto, UpdateSubMenuItemDto } from './dto/submenu.dto';
 import { QuerySubMenuDto } from './dto/query-submenu.dto';
@@ -12,7 +22,10 @@ export class SubmenuController {
 
   @Post()
   @Auth(Role.SUPER_ADMIN, Role.ADMIN)
-  create(@Body() dto: CreateSubMenuItemDto, @CurrentUser('userId') userId?: number) {
+  create(
+    @Body() dto: CreateSubMenuItemDto,
+    @CurrentUser('userId') userId?: number,
+  ) {
     return this.submenuService.create(dto, userId);
   }
 

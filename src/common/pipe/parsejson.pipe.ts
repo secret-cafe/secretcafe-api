@@ -1,8 +1,4 @@
-import {
-  PipeTransform,
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
 
@@ -47,9 +43,7 @@ export class ParseJsonPipe implements PipeTransform {
 
     const extract = (errs: ValidationError[], parent = '') => {
       for (const err of errs) {
-        const field = parent
-          ? `${parent}.${err.property}`
-          : err.property;
+        const field = parent ? `${parent}.${err.property}` : err.property;
 
         if (err.constraints) {
           result[field] = Object.values(err.constraints);

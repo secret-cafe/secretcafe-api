@@ -8,7 +8,6 @@ import { TableService } from '../table/table.service';
 @Module({
   imports: [PrismaModule],
   controllers: [CustomerController],
-  providers: [MenuService, CategoryService, TableService]
+  providers: [MenuService, CategoryService, TableService],
 })
-
 export class CustomerModule {}

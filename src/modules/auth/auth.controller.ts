@@ -6,15 +6,14 @@ import { cookieOptions } from 'src/common/constants/constants';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) { }
+  constructor(private authService: AuthService) {}
 
   @Post('login')
-  async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: express.Response) {
-
-    const result = await this.authService.login(
-      body.email,
-      body.password,
-    );
+  async login(
+    @Body() body: { email: string; password: string },
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    const result = await this.authService.login(body.email, body.password);
 
     res.cookie('token', result.access_token, cookieOptions);
 
@@ -28,9 +27,9 @@ export class AuthController {
   logout(@Res({ passthrough: true }) res: express.Response) {
     res.clearCookie('token', cookieOptions);
 
-    return { 
-      status: true, 
-      message: 'Logged out successfully' 
+    return {
+      status: true,
+      message: 'Logged out successfully',
     };
   }
 }

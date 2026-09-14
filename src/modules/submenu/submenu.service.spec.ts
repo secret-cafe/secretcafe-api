@@ -35,10 +35,7 @@ describe('SubmenuService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        SubmenuService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [SubmenuService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<SubmenuService>(SubmenuService);

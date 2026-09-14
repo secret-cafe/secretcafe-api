@@ -120,27 +120,41 @@ describe('InventoryService', () => {
 
   describe('findAll', () => {
     beforeEach(() => {
-      prisma.$transaction.mockImplementation((queries: any[]) => Promise.all(queries));
+      prisma.$transaction.mockImplementation((queries: any[]) =>
+        Promise.all(queries),
+      );
       prisma.inventoryItem.findMany.mockResolvedValue([]);
       prisma.inventoryItem.count.mockResolvedValue(0);
     });
 
     it('should filter by status=low using the lowStockThreshold', async () => {
-      await service.findAll({ page: 1, limit: 10, status: InventoryStatus.LOW });
+      await service.findAll({
+        page: 1,
+        limit: 10,
+        status: InventoryStatus.LOW,
+      });
 
       const where = prisma.inventoryItem.findMany.mock.calls[0][0].where;
       expect(where.quantity).toEqual({ lte: 'lowStockThreshold' });
     });
 
     it('should filter by status=out using quantity <= 0', async () => {
-      await service.findAll({ page: 1, limit: 10, status: InventoryStatus.OUT });
+      await service.findAll({
+        page: 1,
+        limit: 10,
+        status: InventoryStatus.OUT,
+      });
 
       const where = prisma.inventoryItem.findMany.mock.calls[0][0].where;
       expect(where.quantity).toEqual({ lte: 0 });
     });
 
     it('should filter by status=inactive using isActive false', async () => {
-      await service.findAll({ page: 1, limit: 10, status: InventoryStatus.INACTIVE });
+      await service.findAll({
+        page: 1,
+        limit: 10,
+        status: InventoryStatus.INACTIVE,
+      });
 
       const where = prisma.inventoryItem.findMany.mock.calls[0][0].where;
       expect(where.isActive).toBe(false);

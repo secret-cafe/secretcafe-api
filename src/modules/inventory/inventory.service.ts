@@ -24,7 +24,7 @@ type InventoryItemRaw = {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   private readonly inventorySelect = {
     inventoryId: true,

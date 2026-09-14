@@ -461,3 +461,29 @@ model InventoryItem {
   @@index([deletedAt])
   @@index([inventoryId])
 }
+
+model ApplicationLogs {
+  id              Int      @id @default(autoincrement())
+  logId           String   @unique @default(uuid())
+  requestId       String?
+  moduleName      String?
+  method          String
+  path            String
+  statusCode      Int?
+  requestHeaders  Json?
+  requestBody     Json?
+  responseBody    Json?
+  ip              String?
+  userId          String?
+  createdBy       Int?     @db.UnsignedInt
+  durationMs      Int?
+  error           Json?
+  createdAt       DateTime @default(now())
+
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([moduleName])
+  @@index([path])
+  @@index([statusCode])
+  @@index([userId])
+}

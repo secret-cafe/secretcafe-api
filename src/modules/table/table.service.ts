@@ -4,7 +4,12 @@ import {
   throwBadRequestException,
   throwNotFoundException,
 } from 'src/common/utils/http-exception.helper';
-import { _tableStatus, CreateTableDto, QueryTableDto, UpdateTableDto } from './dto/table.dto';
+import {
+  _tableStatus,
+  CreateTableDto,
+  QueryTableDto,
+  UpdateTableDto,
+} from './dto/table.dto';
 import { TableSessionDto } from './dto/table-session.dto';
 import {
   Prisma,
@@ -35,7 +40,7 @@ export class TableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
-  ) { }
+  ) {}
 
   private readonly tableSelect = {
     tableId: true,
@@ -163,7 +168,8 @@ export class TableService {
       deletedAt: null,
       ...(query.type && { type: query.type }),
       ...(query.tableStatus && { tableStatus: query.tableStatus }),
-      ...((status === _tableStatus.ACTIVE || status === _tableStatus.INACTIVE) && {
+      ...((status === _tableStatus.ACTIVE ||
+        status === _tableStatus.INACTIVE) && {
         isActive: status === _tableStatus.ACTIVE,
       }),
     };

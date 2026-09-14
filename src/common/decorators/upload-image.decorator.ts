@@ -1,7 +1,4 @@
-import {
-  applyDecorators,
-  UseInterceptors,
-} from '@nestjs/common';
+import { applyDecorators, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { createStorage } from '../upload/storage/cloudinary.storage';
 import { UploadFolderInterceptor } from '../interceptors/upload-folder.interceptor';

@@ -125,7 +125,9 @@ describe('MenuService', () => {
 
     it('should filter by categoryId resolved to the internal numeric category id', async () => {
       prisma.category.findFirst.mockResolvedValue({ id: 5 });
-      prisma.$transaction.mockImplementation((queries: any[]) => Promise.all(queries));
+      prisma.$transaction.mockImplementation((queries: any[]) =>
+        Promise.all(queries),
+      );
       prisma.menuItem.findMany.mockResolvedValue([]);
       prisma.menuItem.count.mockResolvedValue(0);
 

@@ -8,5 +8,4 @@ import { PrismaModule } from 'src/prisma/prisma.module';
   controllers: [CategoryController],
   providers: [CategoryService],
 })
-
 export class CategoryModule {}

@@ -4,26 +4,26 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-jwt';
 
 const cookieExtractor = (req: any) => {
-    return req?.cookies?.token || null;
+  return req?.cookies?.token || null;
 };
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor() {
-        super({
-            jwtFromRequest: cookieExtractor,
-            ignoreExpiration: false,
-            secretOrKey: process.env.JWT_SECRET ?? 'SUPER_SECRET_KEY',
-        });
-    }
+  constructor() {
+    super({
+      jwtFromRequest: cookieExtractor,
+      ignoreExpiration: false,
+      secretOrKey: process.env.JWT_SECRET ?? 'SUPER_SECRET_KEY',
+    });
+  }
 
-    async validate(payload: any) {
-        return {
-            sub: payload.sub,
-            userId: payload.sub,
-            currentUserId: payload.userId,
-            email: payload.email,
-            role: payload.role
-        };
-    }
+  async validate(payload: any) {
+    return {
+      sub: payload.sub,
+      userId: payload.sub,
+      currentUserId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+    };
+  }
 }

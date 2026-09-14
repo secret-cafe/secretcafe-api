@@ -2,13 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from 'generated/prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { throwBadRequestException, throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import {
+  throwBadRequestException,
+  throwNotFoundException,
+} from 'src/common/utils/http-exception.helper';
 import { CreateSubMenuItemDto, UpdateSubMenuItemDto } from './dto/submenu.dto';
 import { QuerySubMenuDto, SubMenuStatus } from './dto/query-submenu.dto';
 
 @Injectable()
 export class SubmenuService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   private readonly subMenuSelect = {
     subMenuId: true,
@@ -46,7 +49,9 @@ export class SubmenuService {
     });
 
     if (existing) {
-      throwBadRequestException(`Sub menu item with name "${dto.name}" already exists.`);
+      throwBadRequestException(
+        `Sub menu item with name "${dto.name}" already exists.`,
+      );
       return;
     }
 
@@ -79,7 +84,8 @@ export class SubmenuService {
       ...(query?.search && {
         name: { contains: query.search },
       }),
-      ...((status === SubMenuStatus.ACTIVE || status === SubMenuStatus.INACTIVE) && {
+      ...((status === SubMenuStatus.ACTIVE ||
+        status === SubMenuStatus.INACTIVE) && {
         available: status === SubMenuStatus.ACTIVE,
       }),
     };
@@ -117,7 +123,11 @@ export class SubmenuService {
     };
   }
 
-  async update(subMenuId: string, dto: UpdateSubMenuItemDto, updatedById?: number) {
+  async update(
+    subMenuId: string,
+    dto: UpdateSubMenuItemDto,
+    updatedById?: number,
+  ) {
     await this.findSubMenuOrThrow(subMenuId);
 
     await this.prisma.subMenuItem.updateMany({

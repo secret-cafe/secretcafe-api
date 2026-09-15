@@ -1,5 +1,12 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { OrderStatus, OrderType } from 'generated/prisma/client';
 
 export class QueryOrderDto {
@@ -26,4 +33,9 @@ export class QueryOrderDto {
   @IsOptional()
   @IsEnum(OrderType)
   orderType?: OrderType;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  latestOrder?: boolean = false;
 }

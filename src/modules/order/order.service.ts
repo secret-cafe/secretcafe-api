@@ -98,6 +98,9 @@ export class OrderService {
    * - `orderItemId` present + `isCancelled: false` → update existing item
    * - `orderItemId` present + `isCancelled: true`  → cancel existing item
    *
+   * Once a bill has been generated for the session, adding or updating order
+   * items is rejected with a Bad Request error.
+   *
    * All IDs in the DTO (`tableId`, `menuItemId`, `subMenuItemId`, `orderItemId`)
    * are public UUIDs. The internal numeric primary keys are never accepted or returned.
    */
@@ -123,6 +126,19 @@ export class OrderService {
 
     // 2. Execute within a single transaction
     await this.prisma.$transaction(async (tx) => {
+      // Block adding/updating items once a bill has been generated for the session
+      const generatedBill = await tx.billing.findFirst({
+        where: { sessionId: session.id },
+        select: { id: true },
+      });
+
+      if (generatedBill) {
+        throwBadRequestException(
+          'Cannot add or update order items after the bill has been generated.',
+        );
+        return;
+      }
+
       // Look up existing order by session (no orderId from client needed)
       const existing = await tx.order.findFirst({
         where: { sessionId: session.id },
@@ -451,6 +467,7 @@ export class OrderService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
+    const latestOrder = query.latestOrder === true;
 
     const where: Prisma.OrderWhereInput = {
       deletedAt: null,
@@ -461,9 +478,10 @@ export class OrderService {
       ...(query.orderType && { orderType: query.orderType }),
     };
 
-    const [orders, total] = await this.prisma.$transaction([
+    const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
+        distinct: latestOrder ? ['tableId'] : undefined,
         select: {
           ...this.orderSelect,
           table: { select: { tableId: true, name: true } },
@@ -472,7 +490,11 @@ export class OrderService {
         skip,
         take: limit,
       }),
-      this.prisma.order.count({ where }),
+      latestOrder
+        ? this.prisma.order
+            .groupBy({ by: ['tableId'], where })
+            .then((groups) => groups.length)
+        : this.prisma.order.count({ where }),
     ]);
 
     const grouped = Object.values(
@@ -487,9 +509,9 @@ export class OrderService {
             orders: [],
           };
           acc[tid].orders.push({
-            orderStatus: status,
             tableId: tid,
             ...rest,
+            orderStatus: status,
             items: this.transformOrderItems(items),
           });
           return acc;

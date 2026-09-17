@@ -36,12 +36,6 @@ export class UserController {
     return this.userService.findAll(query);
   }
 
-  @Get('profile')
-  @Auth(Role.SUPER_ADMIN, Role.ADMIN, Role.CHEF, Role.WAITER)
-  getProfile(@Req() req: any) {
-    return this.userService.findOne(req.user.currentUserId);
-  }
-
   @Get(':userId')
   getUserById(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.userService.findOne(userId);

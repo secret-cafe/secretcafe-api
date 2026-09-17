@@ -6,7 +6,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 
-export function throwUnauthorizedException(message = 'Invalid credentials') {
+export function throwUnauthorizedException(
+  message = 'Invalid credentials',
+): never {
   throw new UnauthorizedException({
     status: false,
     message,
@@ -15,7 +17,7 @@ export function throwUnauthorizedException(message = 'Invalid credentials') {
   });
 }
 
-export function throwNotFoundException(message = 'User not found') {
+export function throwNotFoundException(message = 'User not found'): never {
   throw new NotFoundException({
     status: false,
     message,
@@ -24,7 +26,7 @@ export function throwNotFoundException(message = 'User not found') {
   });
 }
 
-export function throwForbiddenException(message = 'Access Denied') {
+export function throwForbiddenException(message = 'Access Denied'): never {
   throw new ForbiddenException({
     status: false,
     message,
@@ -33,7 +35,7 @@ export function throwForbiddenException(message = 'Access Denied') {
   });
 }
 
-export function throwBadRequestException(message = 'Access Denied') {
+export function throwBadRequestException(message = 'Access Denied'): never {
   throw new BadRequestException({
     status: false,
     message,

@@ -69,21 +69,23 @@ enum DiscountType {
 }
 
 model UserInfo {
-  id          Int       @id @default(autoincrement()) @db.UnsignedInt
-  userId      String    @unique @db.VarChar(36)
-  roleId      Int?      @db.UnsignedInt
-  name        String
-  username    String
-  email       String    @db.VarChar(255)
-  password    String    @db.VarChar(255)
-  phoneNumber String?   @db.VarChar(20)
-  isActive    Boolean   @default(true)
-  createdBy   Int?      @db.UnsignedInt
-  updatedBy   Int?      @db.UnsignedInt
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  role        Roles?    @relation(fields: [roleId], references: [id])
+  id                    Int       @id @default(autoincrement()) @db.UnsignedInt
+  userId                String    @unique @db.VarChar(36)
+  roleId                Int?      @db.UnsignedInt
+  name                  String
+  username              String
+  email                 String    @db.VarChar(255)
+  password              String    @db.VarChar(255)
+  phoneNumber           String?   @db.VarChar(20)
+  isActive              Boolean   @default(true)
+  refreshTokenHash      String?   @db.VarChar(64)
+  refreshTokenExpiresAt DateTime?
+  createdBy             Int?      @db.UnsignedInt
+  updatedBy             Int?      @db.UnsignedInt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+  role                  Roles?    @relation(fields: [roleId], references: [id])
 
   @@index([deletedAt])
   @@index([userId])

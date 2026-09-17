@@ -32,7 +32,6 @@ export class UserService {
     phoneNumber: true,
     isActive: true,
     createdAt: true,
-    updatedAt: true,
     role: {
       select: {
         roleId: true,

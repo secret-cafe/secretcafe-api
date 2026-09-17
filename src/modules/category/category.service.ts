@@ -8,6 +8,7 @@ import { QueryCategoryDto, CategoryStatus } from './dto/query-category.dto';
 import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
 import { isNonEmptyString } from 'src/common/utils/utils';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 
 @Injectable()
 export class CategoryService {
@@ -63,6 +64,15 @@ export class CategoryService {
     }
   }
 
+  private async ensureUniqueName(name?: string, excludeCategoryId?: string) {
+    await ensureUniqueField(this.prisma.category, 'name', name, {
+      exclude: excludeCategoryId
+        ? { categoryId: { not: excludeCategoryId } }
+        : undefined,
+      label: 'Category',
+    });
+  }
+
   async findAll(query?: QueryCategoryDto) {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 10;
@@ -115,6 +125,8 @@ export class CategoryService {
   }
 
   async create(data: CreateCategoryDto, createdById?: number, file?: any) {
+    await this.ensureUniqueName(data.name);
+
     try {
       await this.prisma.category.create({
         data: {
@@ -145,6 +157,8 @@ export class CategoryService {
     file?: any,
     updatedById?: number,
   ) {
+    await this.ensureUniqueName(data.name, categoryId);
+
     try {
       const updateData: any = {
         ...data,

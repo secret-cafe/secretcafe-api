@@ -10,6 +10,7 @@ import {
 } from 'src/common/utils/http-exception.helper';
 import { Prisma, DiscountType } from 'generated/prisma/client';
 import { randomUUID } from 'crypto';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 
 @Injectable()
 export class DiscountService {
@@ -55,6 +56,15 @@ export class DiscountService {
     if (type === DiscountType.AMOUNT && value <= 0) {
       throwBadRequestException('Amount discount value must be > 0.');
     }
+  }
+
+  private async ensureUniqueName(name?: string, excludeDiscountId?: string) {
+    await ensureUniqueField(this.prisma.discount, 'name', name, {
+      exclude: excludeDiscountId
+        ? { discountId: { not: excludeDiscountId } }
+        : undefined,
+      label: 'Discount',
+    });
   }
 
   async findAll(query: QueryDiscountDto) {
@@ -112,6 +122,7 @@ export class DiscountService {
   }
 
   async create(data: CreateDiscountDto, userId?: number) {
+    await this.ensureUniqueName(data.name);
     this.validateValue(data.type, data.value);
 
     try {
@@ -138,6 +149,8 @@ export class DiscountService {
 
   async update(discountId: string, data: UpdateDiscountDto, userId?: number) {
     await this.findDiscountOrThrow(discountId);
+
+    await this.ensureUniqueName(data.name, discountId);
 
     if (data.type !== undefined && data.value !== undefined) {
       this.validateValue(data.type, data.value);

@@ -6,6 +6,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 import * as bcrypt from 'bcrypt';
 
 type UserRaw = {
@@ -70,6 +71,37 @@ export class UserService {
     return await bcrypt.hash(password, 10);
   }
 
+  private async ensureUniqueUserFields(
+    data: CreateUserDto | UpdateUserDto,
+    excludeUserId?: string,
+  ) {
+    const exclude = excludeUserId
+      ? { userId: { not: excludeUserId } }
+      : undefined;
+
+    await ensureUniqueField(this.prisma.userInfo, 'name', data.name, {
+      exclude,
+      label: 'Name',
+    });
+    await ensureUniqueField(this.prisma.userInfo, 'username', data.username, {
+      exclude,
+      label: 'Username',
+    });
+    await ensureUniqueField(this.prisma.userInfo, 'email', data.email, {
+      exclude,
+      label: 'Email',
+    });
+    await ensureUniqueField(
+      this.prisma.userInfo,
+      'phoneNumber',
+      data.phoneNumber,
+      {
+        exclude,
+        label: 'Phone number',
+      },
+    );
+  }
+
   async findAll(query: QueryUserDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -130,6 +162,8 @@ export class UserService {
   async create(data: CreateUserDto, createdById?: number) {
     const role = await this.resolveRoleOrThrow(data.roleId);
 
+    await this.ensureUniqueUserFields(data);
+
     try {
       const hashedPassword = await this.hashPassword(data.password);
       await this.prisma.userInfo.create({
@@ -167,6 +201,8 @@ export class UserService {
       const role = await this.resolveRoleOrThrow(data.roleId);
       roleId = role.id;
     }
+
+    await this.ensureUniqueUserFields(data, userId);
 
     try {
       let password: string | undefined;

@@ -9,6 +9,7 @@ import {
 } from 'src/common/utils/http-exception.helper';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { isNonEmptyString } from 'src/common/utils/utils';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
 import { QueryMenuDto, MenuStatus } from './dto/query-menu.dto';
 
@@ -163,7 +164,16 @@ export class MenuService {
     }
   }
 
+  private async ensureUniqueName(name?: string, excludeMenuId?: string) {
+    await ensureUniqueField(this.prisma.menuItem, 'name', name, {
+      exclude: excludeMenuId ? { menuId: { not: excludeMenuId } } : undefined,
+      label: 'Menu',
+    });
+  }
+
   async create(data: CreateMenuDto, file?: any, createdById?: number) {
+    await this.ensureUniqueName(data.name);
+
     try {
       const { categoryId, submenu, ...menuData } = data;
       const categoryInternalId =
@@ -322,6 +332,8 @@ export class MenuService {
     file?: any,
     updatedById?: number,
   ) {
+    await this.ensureUniqueName(data.name, menuId);
+
     const updateData: any = {
       ...data,
       updatedBy: updatedById ?? null,

@@ -60,6 +60,22 @@ describe('InventoryService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should throw BadRequestException when name already exists', async () => {
+      prisma.inventoryItem.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ id: 1 });
+
+      await expect(
+        service.create({
+          name: 'Tomato',
+          sku: 'VEG-001',
+          unit: 'kg',
+          quantity: 10,
+          lowStockThreshold: 2,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should create an inventory item with a generated inventoryId', async () => {
       prisma.inventoryItem.findFirst.mockResolvedValue(null);
       prisma.inventoryItem.create.mockResolvedValue({ id: 1 });

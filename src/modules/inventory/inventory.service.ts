@@ -5,10 +5,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { InventoryStatus, QueryInventoryDto } from './dto/query-inventory.dto';
-import {
-  throwBadRequestException,
-  throwNotFoundException,
-} from 'src/common/utils/http-exception.helper';
+import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 
 type InventoryItemRaw = {
   inventoryId: string;
@@ -52,16 +50,21 @@ export class InventoryService {
   }
 
   private async ensureUniqueSku(sku: string, excludeInventoryId?: string) {
-    const existing = await this.prisma.inventoryItem.findFirst({
-      where: {
-        sku,
-        deletedAt: null,
-        ...(excludeInventoryId && { inventoryId: { not: excludeInventoryId } }),
-      },
-      select: { id: true },
+    await ensureUniqueField(this.prisma.inventoryItem, 'sku', sku, {
+      exclude: excludeInventoryId
+        ? { inventoryId: { not: excludeInventoryId } }
+        : undefined,
+      label: 'SKU',
     });
+  }
 
-    if (existing) throwBadRequestException(`SKU "${sku}" already exists`);
+  private async ensureUniqueName(name?: string, excludeInventoryId?: string) {
+    await ensureUniqueField(this.prisma.inventoryItem, 'name', name, {
+      exclude: excludeInventoryId
+        ? { inventoryId: { not: excludeInventoryId } }
+        : undefined,
+      label: 'Inventory item',
+    });
   }
 
   private toResponse(item: InventoryItemRaw) {
@@ -81,6 +84,7 @@ export class InventoryService {
 
   async create(data: CreateInventoryDto, userId?: number) {
     await this.ensureUniqueSku(data.sku);
+    await this.ensureUniqueName(data.name);
 
     try {
       await this.prisma.inventoryItem.create({
@@ -178,6 +182,8 @@ export class InventoryService {
     if (data.sku) {
       await this.ensureUniqueSku(data.sku, inventoryId);
     }
+
+    await this.ensureUniqueName(data.name, inventoryId);
 
     try {
       const updateData: any = {

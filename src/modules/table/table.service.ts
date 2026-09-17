@@ -23,6 +23,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import QRCode from 'qrcode';
 import { CloudinaryService } from 'src/common/upload/cloudinary/cloudinary.service';
 import { originUrl } from 'src/common/constants/constants';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 
 /**
  * Input accepted by session/live-charge flows.
@@ -93,6 +94,13 @@ export class TableService {
 
     if (!table) throwNotFoundException(`Table with ID ${tableId} not found`);
     return table!.id;
+  }
+
+  private async ensureUniqueName(name?: string, excludeTableId?: number) {
+    await ensureUniqueField(this.prisma.restaurantTable, 'name', name, {
+      exclude: excludeTableId ? { id: { not: excludeTableId } } : undefined,
+      label: 'Table',
+    });
   }
 
   private calculateTimeCharge(session: any) {
@@ -229,6 +237,8 @@ export class TableService {
   }
 
   public async create(data: CreateTableDto, createdById?: number) {
+    await this.ensureUniqueName(data.name);
+
     const tableToken = this.generateQrToken();
     const file = await this.generateQrImage(tableToken);
 
@@ -254,6 +264,8 @@ export class TableService {
   ) {
     const internalId = await this.resolveInternalIdOrThrow(tableId);
     const { regenerateQr, ...tableData } = data;
+
+    await this.ensureUniqueName(data.name, internalId);
 
     // Fetch existing table (includes publicId for Cloudinary deletion)
     const existingTable = await this.findTableOrThrow(internalId);

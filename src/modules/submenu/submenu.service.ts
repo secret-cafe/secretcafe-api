@@ -2,10 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from 'generated/prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import {
-  throwBadRequestException,
-  throwNotFoundException,
-} from 'src/common/utils/http-exception.helper';
+import { throwNotFoundException } from 'src/common/utils/http-exception.helper';
+import { ensureUniqueField } from 'src/common/utils/duplicate-check.helper';
 import { CreateSubMenuItemDto, UpdateSubMenuItemDto } from './dto/submenu.dto';
 import { QuerySubMenuDto, SubMenuStatus } from './dto/query-submenu.dto';
 
@@ -43,17 +41,17 @@ export class SubmenuService {
     return item!;
   }
 
-  async create(dto: CreateSubMenuItemDto, createdById?: number) {
-    const existing = await this.prisma.subMenuItem.findFirst({
-      where: { name: dto.name, deletedAt: null },
+  private async ensureUniqueName(name?: string, excludeSubMenuId?: string) {
+    await ensureUniqueField(this.prisma.subMenuItem, 'name', name, {
+      exclude: excludeSubMenuId
+        ? { subMenuId: { not: excludeSubMenuId } }
+        : undefined,
+      label: 'Sub menu item',
     });
+  }
 
-    if (existing) {
-      throwBadRequestException(
-        `Sub menu item with name "${dto.name}" already exists.`,
-      );
-      return;
-    }
+  async create(dto: CreateSubMenuItemDto, createdById?: number) {
+    await this.ensureUniqueName(dto.name);
 
     await this.prisma.subMenuItem.create({
       data: {
@@ -129,6 +127,8 @@ export class SubmenuService {
     updatedById?: number,
   ) {
     await this.findSubMenuOrThrow(subMenuId);
+
+    await this.ensureUniqueName(dto.name, subMenuId);
 
     await this.prisma.subMenuItem.updateMany({
       where: { subMenuId, deletedAt: null },

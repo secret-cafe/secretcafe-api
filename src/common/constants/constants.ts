@@ -11,6 +11,8 @@ export enum Role {
 export const originUrl = [
   'https://secretcafe.vercel.app',
   'http://localhost:3000',
+  'https://localhost',
+  'capacitor://localhost',
 ];
 
 export const cookieOptions: CookieOptions = {

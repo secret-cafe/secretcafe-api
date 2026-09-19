@@ -21,7 +21,7 @@ export const cookieOptions: CookieOptions = {
   maxAge: 24 * 60 * 60 * 1000,
 };
 
-export const JWT_ACCESS_EXPIRES_IN = '1m';
+export const JWT_ACCESS_EXPIRES_IN = '15m';
 export const JWT_REFRESH_EXPIRES_IN = '7d';
 
 export const ACCESS_TOKEN_COOKIE = 'token';

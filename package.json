@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "vercel-build": "prisma generate && npm run build",
+    "vercel-build": "prisma generate && npm run build && cp generated/prisma/libquery_engine-rhel-openssl-3.0.x.so.node dist/generated/prisma/ && cp generated/prisma/query_engine-windows.dll.node dist/generated/prisma/",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "npm run build && node dist/src/main.js",
     "dev": "nest start --watch",

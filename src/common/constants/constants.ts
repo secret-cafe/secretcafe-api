@@ -10,6 +10,7 @@ export enum Role {
 
 export const originUrl = [
   'https://secretcafe.vercel.app',
+  'https://secret-cafe-omega.vercel.app',
   'http://localhost:3000',
   'https://localhost',
   'capacitor://localhost',
